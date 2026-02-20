@@ -1,0 +1,31 @@
+shop_name,city,country,rating,monthly_sales,num_staff,open_year,category,drinks_sold,avg_price
+Brew & Co,New York,USA,4.7,85000,12,2018,Specialty,9200,5.50
+Morning Grounds,London,UK,4.5,72000,9,2015,Cafe,8100,4.80
+Dark Roast Den,Tokyo,Japan,4.9,95000,15,2019,Specialty,10500,6.20
+Bean There,Sydney,Australia,4.3,61000,8,2016,Cafe,7000,5.10
+The Grind,Paris,France,4.6,78000,11,2017,Specialty,8700,5.90
+Espresso Express,Berlin,Germany,4.4,65000,9,2014,Cafe,7300,4.60
+Sip & Savor,Toronto,Canada,4.8,91000,14,2020,Specialty,9800,5.70
+Cafe Noir,Amsterdam,Netherlands,4.5,69000,10,2016,Cafe,7800,5.30
+Java Junction,Chicago,USA,4.2,58000,7,2013,Cafe,6500,4.90
+The Drip,Melbourne,Australia,4.7,83000,12,2018,Specialty,9000,5.60
+Roast & Toast,Singapore,Singapore,4.6,76000,11,2017,Specialty,8400,6.00
+Cloud Nine Coffee,Seoul,South Korea,4.9,98000,16,2021,Specialty,10800,6.50
+Cup of Joy,Barcelona,Spain,4.4,63000,8,2015,Cafe,7100,4.70
+The Press,Dublin,Ireland,4.3,59000,7,2014,Cafe,6700,4.50
+Blend Bar,Dubai,UAE,4.8,92000,13,2019,Specialty,9900,7.20
+Percolate,Los Angeles,USA,4.6,79000,11,2018,Specialty,8600,5.80
+Daily Grind,Mumbai,India,4.1,45000,6,2012,Cafe,5200,3.20
+Steam Room,Cape Town,South Africa,4.5,67000,9,2016,Cafe,7500,4.40
+Filter Fine,São Paulo,Brazil,4.3,60000,8,2015,Cafe,6800,3.90
+Aroma Lounge,Rome,Italy,4.7,81000,12,2017,Specialty,8900,5.40
+Midnight Brew,New York,USA,4.4,66000,9,2016,Cafe,7400,5.20
+Morning Ritual,London,UK,4.8,89000,13,2020,Specialty,9600,5.60
+Sacred Grounds,Tokyo,Japan,4.5,73000,10,2018,Cafe,8200,5.90
+Pour Over People,San Francisco,USA,4.9,97000,15,2021,Specialty,10600,6.80
+The Caffeinator,Berlin,Germany,4.2,57000,7,2013,Cafe,6400,4.40
+Drip District,Amsterdam,Netherlands,4.6,77000,11,2019,Specialty,8500,5.50
+Beansmith,Toronto,Canada,4.4,64000,8,2017,Cafe,7200,5.00
+Rise & Grind,Sydney,Australia,4.7,84000,12,2020,Specialty,9100,5.70
+Crema Club,Paris,France,4.5,70000,10,2018,Cafe,7900,5.80
+Sip Spot,Seoul,South Korea,4.8,93000,14,2021,Specialty,10100,6.30
