@@ -7,6 +7,17 @@ import { storeCsvRows } from '@/lib/csv-store';
 import { chunkText, chunkTextWithPages } from '@/lib/chunking';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const FILES_BUCKET = 'insightvault-files';
+
+async function ensureFilesBucket(): Promise<void> {
+  const { error } = await supabaseAdmin.storage.createBucket(FILES_BUCKET, {
+    public: false,
+  });
+  if (!error) return;
+  const msg = error.message.toLowerCase();
+  if (msg.includes('already exists') || msg.includes('duplicate')) return;
+  throw new Error(`Failed to initialize storage bucket: ${error.message}`);
+}
 
 export async function POST(req: Request) {
   try {
@@ -72,11 +83,13 @@ export async function POST(req: Request) {
     }
 
     // ── PDF path: extract text → chunk → embed → store vectors ────────────
-    const arrayBuf = await file.arrayBuffer();
+    const pdfBytes = new Uint8Array(await file.arrayBuffer());
+    // Keep parsing and storage bytes separate because parser internals may detach buffers.
+    const parseBytes = pdfBytes.slice();
 
     // pdf-parse v2 uses a class-based API: new PDFParse({ data }) then .getText()
     const { PDFParse } = await import('pdf-parse');
-    const parser = new PDFParse({ data: new Uint8Array(arrayBuf) });
+    const parser = new PDFParse({ data: parseBytes });
     const pdfData = await parser.getText();
     await parser.destroy();
     const text = pdfData.text?.trim();
@@ -99,6 +112,19 @@ export async function POST(req: Request) {
       fileId,
       pageChunks.map((c, i) => ({ content: c.content, embedding: embeddings[i], pageNumber: c.pageNumber }))
     );
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const storagePath = `${fileId}/${Date.now()}-${safeName}`;
+    await ensureFilesBucket();
+    const { error: storageError } = await supabaseAdmin.storage
+      .from(FILES_BUCKET)
+      .upload(storagePath, pdfBytes, {
+        contentType: file.type || 'application/pdf',
+        upsert: true,
+      });
+    if (storageError) {
+      throw new Error(`Failed to store PDF for preview: ${storageError.message}`);
+    }
 
     return NextResponse.json({
       success: true,

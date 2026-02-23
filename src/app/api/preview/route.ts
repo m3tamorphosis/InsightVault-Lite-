@@ -5,6 +5,7 @@ export interface PreviewData {
   headers: string[];
   rows: string[][];
   stats: ColumnStat[];
+  totalRows?: number;
 }
 
 export interface ColumnStat {
@@ -29,7 +30,10 @@ export async function GET(req: Request) {
     if (!records.length) return NextResponse.json({ headers: [], rows: [], stats: [] });
 
     const headers = Object.keys(records[0]);
-    const rows = records.slice(0, 8).map(r => headers.map(h => r[h] ?? ''));
+    const page = Math.max(0, parseInt(searchParams.get('page') ?? '0', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20', 10)));
+    const totalRows = records.length;
+    const rows = records.slice(page * pageSize, (page + 1) * pageSize).map(r => headers.map(h => r[h] ?? ''));
 
     // Compute stats for numeric columns
     const stats: ColumnStat[] = [];
@@ -41,8 +45,8 @@ export async function GET(req: Request) {
         const sum = numVals.reduce((a, b) => a + b, 0);
         stats.push({
           field,
-          min: Math.min(...numVals),
-          max: Math.max(...numVals),
+          min: numVals.reduce((a, b) => (b < a ? b : a), Infinity),
+          max: numVals.reduce((a, b) => (b > a ? b : a), -Infinity),
           avg: parseFloat((sum / numVals.length).toFixed(2)),
           nullCount,
           total: records.length,
@@ -50,7 +54,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const data: PreviewData = { headers, rows, stats };
+    const data: PreviewData = { headers, rows, stats, totalRows };
     return NextResponse.json(data);
   } catch {
     return NextResponse.json({ error: 'Preview failed' }, { status: 500 });

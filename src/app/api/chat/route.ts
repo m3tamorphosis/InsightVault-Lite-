@@ -27,6 +27,14 @@ interface DatasetSchema {
 
 const TITLE_CANDIDATES = new Set(['title', 'name', 'movie', 'film', 'song', 'book', 'product', 'item', 'show']);
 
+// Safe alternatives to Math.min/max(...arr) — spread crashes on arrays > ~100k elements
+function safeMin(nums: number[]): number {
+  return nums.reduce((a, b) => (b < a ? b : a), Infinity);
+}
+function safeMax(nums: number[]): number {
+  return nums.reduce((a, b) => (b > a ? b : a), -Infinity);
+}
+
 function buildSchema(records: Record<string, string>[]): DatasetSchema {
   if (records.length === 0) {
     return { allFields: [], numericFields: [], categoricalFields: [], titleField: null, ranges: {}, topValues: {} };
@@ -49,7 +57,7 @@ function buildSchema(records: Record<string, string>[]): DatasetSchema {
     if (numCount / vals.length > 0.6) {
       numericFields.push(field);
       const nums = vals.map(Number).filter(n => !isNaN(n) && isFinite(n));
-      if (nums.length) ranges[field] = { min: Math.min(...nums), max: Math.max(...nums) };
+      if (nums.length) ranges[field] = { min: safeMin(nums), max: safeMax(nums) };
     } else {
       const unique = new Set(vals.map(v => v.toLowerCase()));
       if (unique.size <= 50 || unique.size / vals.length < 0.3) {
@@ -384,8 +392,8 @@ function execAggregate(args: Args, records: Record<string, string>[]): ToolResul
   let answer = '';
   if (type === 'sum') answer = values.reduce((a, b) => a + b, 0).toLocaleString();
   else if (type === 'avg') answer = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);
-  else if (type === 'min') answer = `${Math.min(...values)}`;
-  else if (type === 'max') answer = `${Math.max(...values)}`;
+  else if (type === 'min') answer = `${safeMin(values)}`;
+  else if (type === 'max') answer = `${safeMax(values)}`;
 
   return {
     answer,
@@ -458,8 +466,8 @@ function execGroupBy(args: Args, records: Record<string, string>[], schema: Data
     let score: number;
     if (aggType === 'sum') score = vals.reduce((a, b) => a + b, 0);
     else if (aggType === 'avg') score = vals.reduce((a, b) => a + b, 0) / vals.length;
-    else if (aggType === 'max') score = Math.max(...vals);
-    else if (aggType === 'min') score = Math.min(...vals);
+    else if (aggType === 'max') score = safeMax(vals);
+    else if (aggType === 'min') score = safeMin(vals);
     else score = vals.length;
     return { group, score };
   }).sort((a, b) => b.score - a.score);
@@ -859,8 +867,12 @@ Rules:
     // Execute ALL requested tool calls
     const toolCalls = choice.message.tool_calls;
     const toolResults: ToolResult[] = toolCalls.map(tc => {
-      const args = JSON.parse(tc.function.arguments) as Args;
-      return executeTool(tc.function.name, args, records, schema);
+      try {
+        const args = JSON.parse(tc.function.arguments) as Args;
+        return executeTool(tc.function.name, args, records, schema);
+      } catch {
+        return { answer: 'Could not execute that analysis — please try rephrasing your question.' };
+      }
     });
 
     // Build tool-role messages for the synthesis pass

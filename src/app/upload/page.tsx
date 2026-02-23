@@ -24,8 +24,10 @@ export default function UploadPage() {
     const [file, setFile] = useState<File | null>(null);
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
     const [errorMsg, setErrorMsg] = useState('');
+    const [sizeWarning, setSizeWarning] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [recentFiles, setRecentFiles] = useState<Array<{name: string; fileId: string; type: string; timestamp: number}>>([]);
+    const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
     useEffect(() => {
         try {
@@ -34,20 +36,35 @@ export default function UploadPage() {
         } catch { /* ignore */ }
     }, []);
 
-    const removeRecentFile = (e: React.MouseEvent, fileId: string) => {
-        e.stopPropagation();
+    const removeRecentFile = (fileId: string) => {
         const updated = recentFiles.filter(f => f.fileId !== fileId);
         setRecentFiles(updated);
+        setConfirmRemoveId(null);
         try { localStorage.setItem('iv_recent_files', JSON.stringify(updated)); } catch { /* ignore */ }
+    };
+
+    const validateAndSetFile = (f: File) => {
+        const kind = getFileKind(f);
+        if (!kind) return;
+        setSizeWarning(null);
+        const mb = f.size / 1_048_576;
+        if (f.size > 52_428_800) {
+            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) — max 50 MB.`);
+            return;
+        }
+        if (kind === 'pdf' && f.size > 5_242_880) {
+            setSizeWarning(`Large PDF (${mb.toFixed(1)} MB) — embedding may take 30–60 seconds.`);
+        } else if (kind === 'csv' && f.size > 10_485_760) {
+            setSizeWarning(`Large CSV (${mb.toFixed(1)} MB) — may take a few seconds to load.`);
+        }
+        setFile(f);
+        setStatus('idle');
+        setErrorMsg('');
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
-        if (f && getFileKind(f)) {
-            setFile(f);
-            setStatus('idle');
-            setErrorMsg('');
-        }
+        if (f) validateAndSetFile(f);
     };
 
     const handleUpload = async () => {
@@ -59,6 +76,19 @@ export default function UploadPage() {
             const response = await fetch('/api/upload', { method: 'POST', body: formData });
             const result = await response.json();
             if (response.ok) {
+                if ((result.fileType ?? 'csv') === 'pdf') {
+                    try {
+                        // Pass the original File object across client-side route transition.
+                        // Chat page will create its own object URL from this file.
+                        (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile = {
+                            fileId: result.fileId,
+                            file,
+                        };
+                        // Secondary fallback across route transition.
+                        const blobUrl = URL.createObjectURL(file);
+                        sessionStorage.setItem(`iv_pdf_blob_${result.fileId}`, blobUrl);
+                    } catch { /* ignore */ }
+                }
                 setStatus('success');
                 setTimeout(() => {
                     router.push(`/chat?fileId=${result.fileId}&type=${result.fileType ?? 'csv'}&name=${encodeURIComponent(file.name)}`);
@@ -76,6 +106,7 @@ export default function UploadPage() {
     const isReady = !!file && status !== 'uploading';
     const fileKind = file ? getFileKind(file) : null;
     const isPDF = fileKind === 'pdf';
+    const isBlocked = !file && !!sizeWarning;
 
     return (
         <div
@@ -175,15 +206,11 @@ export default function UploadPage() {
                             e.preventDefault();
                             setIsDragging(false);
                             const dropped = e.dataTransfer.files[0];
-                            if (dropped && getFileKind(dropped)) {
-                                setFile(dropped);
-                                setStatus('idle');
-                                setErrorMsg('');
-                            }
+                            if (dropped) validateAndSetFile(dropped);
                         }}
                         style={{
                             borderRadius: '12px',
-                            border: `1px dashed ${isDragging ? 'rgba(59,130,246,0.7)' : file ? 'rgba(59,130,246,0.45)' : 'var(--border-strong-2)'}`,
+                            border: `1px dashed ${isDragging ? 'rgba(59,130,246,0.7)' : file ? 'rgba(59,130,246,0.45)' : isBlocked ? 'rgba(239,68,68,0.4)' : 'var(--border-strong-2)'}`,
                             background: isDragging
                                 ? 'rgba(59,130,246,0.06)'
                                 : file ? 'rgba(59,130,246,0.04)'
@@ -203,7 +230,7 @@ export default function UploadPage() {
                         {file && (
                             <button
                                 type="button"
-                                onClick={e => { e.stopPropagation(); setFile(null); setStatus('idle'); setErrorMsg(''); }}
+                                onClick={e => { e.stopPropagation(); setFile(null); setStatus('idle'); setErrorMsg(''); setSizeWarning(null); }}
                                 className="absolute top-2.5 right-2.5 z-10 w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-150 pointer-events-auto"
                                 title="Remove file"
                                 style={{
@@ -269,6 +296,21 @@ export default function UploadPage() {
                         </div>
                     </div>
 
+                    {/* Size warning */}
+                    {sizeWarning && (
+                        <div
+                            className="mb-3 px-3 py-2.5 rounded-xl flex items-start gap-2 text-xs animate-fade-in"
+                            style={{
+                                background: isBlocked ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                                border: `1px solid ${isBlocked ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                                color: isBlocked ? '#f87171' : '#fbbf24',
+                            }}
+                        >
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                            <span>{sizeWarning}</span>
+                        </div>
+                    )}
+
                     {/* Upload button */}
                     <button
                         onClick={handleUpload}
@@ -307,7 +349,7 @@ export default function UploadPage() {
                         )}
                     </button>
 
-                    {/* Error */}
+                    {/* Upload error */}
                     {status === 'error' && (
                         <div
                             className="mt-3 px-3 py-2.5 rounded-xl flex items-start gap-2 text-xs animate-fade-in"
@@ -359,37 +401,60 @@ export default function UploadPage() {
                                             key={f.fileId}
                                             className="group flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-150"
                                             style={{ background: 'var(--bg-element)', border: '1px solid var(--border-default)' }}
-                                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(59,130,246,0.4)'; }}
+                                            onMouseEnter={e => { if (confirmRemoveId !== f.fileId) (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(59,130,246,0.4)'; }}
                                             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-default)'; }}
                                         >
-                                            {/* Clickable file area */}
-                                            <button
-                                                onClick={() => router.push(`/chat?fileId=${f.fileId}&type=${f.type}&name=${encodeURIComponent(f.name)}`)}
-                                                className="flex-1 flex items-center gap-2.5 text-left min-w-0"
-                                                style={{ color: 'var(--text-muted)', background: 'none', border: 'none', padding: 0 }}
-                                            >
-                                                {f.type === 'pdf'
-                                                    ? <FileType className="w-3.5 h-3.5 shrink-0" style={{ color: '#f59e0b' }} />
-                                                    : <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: '#3b82f6' }} />
-                                                }
-                                                <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-muted)' }}>{f.name}</span>
-                                                <span className="text-[10px] uppercase shrink-0 mr-1" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                                                    {f.type}
-                                                </span>
-                                                <ArrowRight className="w-3 h-3 shrink-0" style={{ color: 'var(--text-faint)' }} />
-                                            </button>
+                                            {confirmRemoveId === f.fileId ? (
+                                                /* Inline confirm */
+                                                <div className="flex-1 flex items-center gap-2">
+                                                    <span className="text-xs flex-1" style={{ color: 'var(--text-muted)' }}>Remove from recent?</span>
+                                                    <button
+                                                        onClick={() => removeRecentFile(f.fileId)}
+                                                        className="text-[11px] px-2 py-0.5 rounded-md font-medium"
+                                                        style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setConfirmRemoveId(null)}
+                                                        className="text-[11px] px-2 py-0.5 rounded-md font-medium"
+                                                        style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-strong)', color: 'var(--text-ghost)' }}
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {/* Clickable file area */}
+                                                    <button
+                                                        onClick={() => router.push(`/chat?fileId=${f.fileId}&type=${f.type}&name=${encodeURIComponent(f.name)}`)}
+                                                        className="flex-1 flex items-center gap-2.5 text-left min-w-0"
+                                                        style={{ color: 'var(--text-muted)', background: 'none', border: 'none', padding: 0 }}
+                                                    >
+                                                        {f.type === 'pdf'
+                                                            ? <FileType className="w-3.5 h-3.5 shrink-0" style={{ color: '#f59e0b' }} />
+                                                            : <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: '#3b82f6' }} />
+                                                        }
+                                                        <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-muted)' }}>{f.name}</span>
+                                                        <span className="text-[10px] uppercase shrink-0 mr-1" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
+                                                            {f.type}
+                                                        </span>
+                                                        <ArrowRight className="w-3 h-3 shrink-0" style={{ color: 'var(--text-faint)' }} />
+                                                    </button>
 
-                                            {/* Remove button */}
-                                            <button
-                                                onClick={e => removeRecentFile(e, f.fileId)}
-                                                title="Remove from recent"
-                                                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150"
-                                                style={{ color: 'var(--text-faint)', background: 'transparent' }}
-                                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#f87171'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.1)'; }}
-                                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                                            >
-                                                <X className="w-3 h-3" />
-                                            </button>
+                                                    {/* Remove button → triggers inline confirm */}
+                                                    <button
+                                                        onClick={e => { e.stopPropagation(); setConfirmRemoveId(f.fileId); }}
+                                                        title="Remove from recent"
+                                                        className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150"
+                                                        style={{ color: 'var(--text-faint)', background: 'transparent' }}
+                                                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#f87171'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.1)'; }}
+                                                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

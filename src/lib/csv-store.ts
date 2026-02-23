@@ -52,6 +52,6 @@ export async function getFileType(fileId: string): Promise<'csv' | 'pdf'> {
     .eq('id', fileId)
     .single();
 
-  if (error || !data) return 'csv'; // safe default
+  if (error || !data) throw new Error(`File not found or inaccessible: ${fileId}`);
   return (data as { type: string }).type as 'csv' | 'pdf';
 }

@@ -128,21 +128,51 @@
   "hotPaths": [
     {
       "path": "src\\app\\chat\\page.tsx",
-      "accessCount": 33,
-      "lastAccessed": 1771823496090,
+      "accessCount": 58,
+      "lastAccessed": 1771836196831,
       "type": "directory"
     },
     {
+      "path": "src\\app\\api\\chat\\route.ts",
+      "accessCount": 11,
+      "lastAccessed": 1771830804965,
+      "type": "file"
+    },
+    {
       "path": "src\\app\\upload\\page.tsx",
-      "accessCount": 4,
-      "lastAccessed": 1771812356235,
+      "accessCount": 9,
+      "lastAccessed": 1771835747978,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\api\\preview\\route.ts",
+      "accessCount": 8,
+      "lastAccessed": 1771835762279,
+      "type": "file"
+    },
+    {
+      "path": "src\\lib\\csv-store.ts",
+      "accessCount": 3,
+      "lastAccessed": 1771830827084,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1771830235356,
       "type": "file"
     },
     {
       "path": "src\\lib\\openai.ts",
-      "accessCount": 1,
-      "lastAccessed": 1771821002039,
+      "accessCount": 2,
+      "lastAccessed": 1771830258212,
       "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 2,
+      "lastAccessed": 1771830706477,
+      "type": "directory"
     },
     {
       "path": "src\\lib\\supabase.ts",
@@ -151,15 +181,57 @@
       "type": "file"
     },
     {
-      "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1771821006357,
-      "type": "file"
-    },
-    {
       "path": "public\\samples\\sample-data.csv",
       "accessCount": 1,
       "lastAccessed": 1771822286097,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\api\\upload\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830236102,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\api\\summary\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830242649,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\api\\suggestions\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830242786,
+      "type": "file"
+    },
+    {
+      "path": "src\\lib\\vector-store.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830247154,
+      "type": "file"
+    },
+    {
+      "path": "src\\lib\\chunking.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830247485,
+      "type": "file"
+    },
+    {
+      "path": "src\\app\\globals.css",
+      "accessCount": 1,
+      "lastAccessed": 1771830247923,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 1,
+      "lastAccessed": 1771830254177,
+      "type": "directory"
+    },
+    {
+      "path": "src\\lib\\csv-utils.ts",
+      "accessCount": 1,
+      "lastAccessed": 1771830263907,
       "type": "file"
     }
   ],

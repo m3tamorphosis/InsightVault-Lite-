@@ -36,6 +36,16 @@ function isSeparatorRow(line: string): boolean {
     return /^\|[\s\-:|]+\|/.test(line.trim());
 }
 
+function friendlyError(raw: string): string {
+    if (!raw || raw === 'Unknown error') return 'Something went wrong. Please try again.';
+    if (/network|failed to fetch|ERR_/i.test(raw)) return "Can't reach the server — check your connection and try again.";
+    if (/file not found|inaccessible/i.test(raw)) return "This file couldn't be loaded — try re-uploading it.";
+    if (/rate.?limit|429/i.test(raw)) return 'Too many requests — wait a moment and try again.';
+    if (/timeout/i.test(raw)) return 'Request timed out — try asking a shorter question.';
+    if (/csv files only/i.test(raw)) return 'This operation only works with CSV files.';
+    return raw;
+}
+
 function renderMarkdown(text: string) {
     const lines = text.split('\n');
     const elements: React.ReactNode[] = [];
@@ -258,6 +268,7 @@ interface Dataset { fileId: string; name: string; type: 'csv' | 'pdf'; }
 interface Message {
     role: 'user' | 'assistant';
     content: string;
+    isError?: boolean;
     sources?: string[];
     context?: string;
     chartData?: ChartData;
@@ -356,6 +367,9 @@ function PdfPanel({
     onClose: () => void;
     onOpenFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
+    const [hasLoadError, setHasLoadError] = useState(false);
+    useEffect(() => { setHasLoadError(false); }, [pdfUrl]);
+
     return (
         <div className="flex flex-col h-full">
             {/* Panel header */}
@@ -381,11 +395,12 @@ function PdfPanel({
             </div>
 
             {/* Content */}
-            {pdfUrl ? (
+            {pdfUrl && !hasLoadError ? (
                 <iframe
                     src={pdfUrl}
                     className="flex-1 w-full border-none"
                     title="PDF viewer"
+                    onError={() => setHasLoadError(true)}
                 />
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8">
@@ -397,10 +412,12 @@ function PdfPanel({
                     </div>
                     <div className="text-center">
                         <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>
-                            No PDF preview available
+                            {hasLoadError ? 'Could not load PDF preview' : 'No PDF preview available'}
                         </p>
                         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
-                            Upload the PDF file here to view it alongside the chat
+                            {hasLoadError
+                                ? 'Re-open the PDF file to refresh local preview, or upload again.'
+                                : 'Upload the PDF file here to view it alongside the chat'}
                         </p>
                     </div>
                     <label
@@ -424,9 +441,36 @@ type PreviewData = {
     headers: string[];
     rows: string[][];
     stats: Array<{ field: string; min: number; max: number; avg: number; nullCount: number; total: number }>;
+    totalRows?: number;
 };
 
-function CsvPanel({ data, name, onClose }: { data: PreviewData | null; name: string; onClose: () => void }) {
+function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; name: string; fileId?: string; onClose: () => void }) {
+    const PAGE_SIZE = 20;
+    const [page, setPage] = useState(0);
+    const [pageRows, setPageRows] = useState<string[][] | null>(null);
+    const [isLoadingPage, setIsLoadingPage] = useState(false);
+
+    // Reset pagination when data changes (new file loaded)
+    useEffect(() => { setPage(0); setPageRows(null); }, [data]);
+
+    const totalRows = data?.totalRows ?? 0;
+    const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+    const displayRows = pageRows ?? data?.rows ?? [];
+
+    const goToPage = async (newPage: number) => {
+        if (!fileId || newPage < 0 || newPage >= totalPages) return;
+        setIsLoadingPage(true);
+        try {
+            const r = await fetch(`/api/preview?fileId=${fileId}&page=${newPage}&pageSize=${PAGE_SIZE}`);
+            const pd = await r.json();
+            if (Array.isArray(pd.rows)) { setPageRows(pd.rows); setPage(newPage); }
+        } catch { /* silent */ }
+        finally { setIsLoadingPage(false); }
+    };
+
+    const rowStart = totalRows > 0 ? page * PAGE_SIZE + 1 : 0;
+    const rowEnd = Math.min((page + 1) * PAGE_SIZE, totalRows);
+
     return (
         <div className="flex flex-col h-full">
             {/* Panel header */}
@@ -439,9 +483,9 @@ function CsvPanel({ data, name, onClose }: { data: PreviewData | null; name: str
                     <span className="text-[11px] uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
                         Data Preview
                     </span>
-                    {data && (
+                    {data && totalRows > 0 && (
                         <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                            · {data.rows.length} rows · {data.headers.length} cols
+                            · {totalRows.toLocaleString()} rows · {data.headers.length} cols
                         </span>
                     )}
                 </div>
@@ -457,10 +501,10 @@ function CsvPanel({ data, name, onClose }: { data: PreviewData | null; name: str
             </div>
 
             {data ? (
-                <div className="flex-1 overflow-auto">
+                <div className="flex-1 overflow-auto flex flex-col">
                     {/* Dataset name */}
                     {name && (
-                        <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
+                        <div className="px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
                             <span className="text-[11px] font-medium truncate" style={{ color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>{name}</span>
                         </div>
                     )}
@@ -478,7 +522,7 @@ function CsvPanel({ data, name, onClose }: { data: PreviewData | null; name: str
                                 </tr>
                             </thead>
                             <tbody>
-                                {data.rows.map((row, ri) => (
+                                {displayRows.map((row, ri) => (
                                     <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                                         {row.map((cell, ci) => (
                                             <td key={ci} style={{ padding: '6px 14px', color: 'var(--text-muted)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border-default)' }}>
@@ -491,10 +535,36 @@ function CsvPanel({ data, name, onClose }: { data: PreviewData | null; name: str
                         </table>
                     </div>
 
+                    {/* Pagination footer */}
+                    {totalRows > PAGE_SIZE && (
+                        <div className="shrink-0 flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
+                            <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
+                                {isLoadingPage ? 'Loading…' : `rows ${rowStart}–${rowEnd} of ${totalRows.toLocaleString()}`}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => goToPage(page - 1)}
+                                    disabled={page === 0 || isLoadingPage}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all disabled:opacity-30"
+                                    style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-strong)', color: 'var(--text-dim)' }}
+                                >‹</button>
+                                <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)', minWidth: '32px', textAlign: 'center' }}>
+                                    {page + 1}/{totalPages}
+                                </span>
+                                <button
+                                    onClick={() => goToPage(page + 1)}
+                                    disabled={page >= totalPages - 1 || isLoadingPage}
+                                    className="w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all disabled:opacity-30"
+                                    style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-strong)', color: 'var(--text-dim)' }}
+                                >›</button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Stats section */}
                     {data.stats.length > 0 && (
                         <>
-                            <div className="px-4 py-2.5 mt-2" style={{ borderTop: '1px solid var(--border-default)', borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
+                            <div className="px-4 py-2.5 shrink-0" style={{ borderTop: '1px solid var(--border-default)', borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
                                 <span className="text-[10px] uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
                                     Column Statistics
                                 </span>
@@ -562,6 +632,7 @@ function ChatContent() {
 
     // PDF blob URLs stored per fileId (only available when uploaded directly in this session)
     const pdfBlobUrls = useRef<Map<string, string>>(new Map());
+    const [, setPdfUrlVersion] = useState(0);
     const [showPdfPanel, setShowPdfPanel] = useState(false);
 
     // CSV preview panel
@@ -592,30 +663,59 @@ function ChatContent() {
         }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // When arriving from upload page, hydrate PDF viewer for the selected file.
+    useEffect(() => {
+        if (!initialFileId || initialType !== 'pdf') return;
+        try {
+            const pending = (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile;
+            if (pending?.fileId === initialFileId && pending.file) {
+                const blobUrl = URL.createObjectURL(pending.file);
+                pdfBlobUrls.current.set(initialFileId, blobUrl);
+                setPdfUrlVersion(v => v + 1);
+                delete (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile;
+                return;
+            }
+
+            // Backward-compatible fallback for older in-session handoff.
+            const key = `iv_pdf_blob_${initialFileId}`;
+            const blobUrl = sessionStorage.getItem(key);
+            if (!blobUrl) return;
+            pdfBlobUrls.current.set(initialFileId, blobUrl);
+            setPdfUrlVersion(v => v + 1);
+            sessionStorage.removeItem(key);
+        } catch { /* ignore */ }
+    }, [initialFileId, initialType]);
+
     // Revoke blob URLs on unmount
     useEffect(() => {
         const urls = pdfBlobUrls.current;
-        return () => { urls.forEach(url => URL.revokeObjectURL(url)); };
+        return () => {
+            urls.forEach(url => {
+                if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+            });
+        };
     }, []);
 
     // Track which fileIds have had their preview shown this session
     const shownPreviewsRef = useRef<Set<string>>(new Set());
 
     const fetchAndShowPreview = async (fileId: string, datasetName: string, force = false) => {
-        if (!force && shownPreviewsRef.current.has(fileId)) return;
-        shownPreviewsRef.current.add(fileId);
+        const alreadyShown = shownPreviewsRef.current.has(fileId);
+        if (!alreadyShown) shownPreviewsRef.current.add(fileId);
         try {
             const r = await fetch(`/api/preview?fileId=${fileId}`);
             const preview = await r.json();
             if (preview.headers?.length) {
-                const pd: PreviewData = { headers: preview.headers, rows: preview.rows, stats: preview.stats ?? [] };
+                const pd: PreviewData = { headers: preview.headers, rows: preview.rows, stats: preview.stats ?? [], totalRows: preview.totalRows };
                 setCsvPanelData(pd);
-                setMessages(prev => [...prev, {
-                    role: 'assistant' as const,
-                    content: '',
-                    previewData: pd,
-                    datasetName,
-                }]);
+                if (force || !alreadyShown) {
+                    setMessages(prev => [...prev, {
+                        role: 'assistant' as const,
+                        content: '',
+                        previewData: pd,
+                        datasetName,
+                    }]);
+                }
             }
         } catch { /* ignore */ }
     };
@@ -636,6 +736,16 @@ function ChatContent() {
             fetchAndShowPreview(activeFileId, ds?.name ?? '');
         }
     }, [activeFileId, activeFileType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // For saved/recent PDF files, stream preview from server endpoint.
+    useEffect(() => {
+        if (!activeFileId || activeFileType !== 'pdf') return;
+        const existingUrl = pdfBlobUrls.current.get(activeFileId);
+        if (existingUrl?.startsWith('blob:')) return;
+        const streamUrl = `/api/file-content?fileId=${activeFileId}&t=${Date.now()}`;
+        pdfBlobUrls.current.set(activeFileId, streamUrl);
+        setPdfUrlVersion(v => v + 1);
+    }, [activeFileId, activeFileType]);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -677,11 +787,11 @@ function ChatContent() {
                 // Save to recent files
                 saveRecentFile(baseName, result.fileId, fileType);
 
-                // For PDF: store blob URL for in-session viewer and auto-open panel
+                // For PDF: store blob URL for in-session viewer
                 if (fileType === 'pdf') {
                     const blobUrl = URL.createObjectURL(file);
                     pdfBlobUrls.current.set(result.fileId, blobUrl);
-                    setShowPdfPanel(true);
+                    setPdfUrlVersion(v => v + 1);
                 }
 
                 // Auto-summary
@@ -739,7 +849,11 @@ function ChatContent() {
         }
         // Revoke blob URL if exists
         const blobUrl = pdfBlobUrls.current.get(fileId);
-        if (blobUrl) { URL.revokeObjectURL(blobUrl); pdfBlobUrls.current.delete(fileId); }
+        if (blobUrl) {
+            if (blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+            pdfBlobUrls.current.delete(fileId);
+            setPdfUrlVersion(v => v + 1);
+        }
 
         setDatasets(prev => {
             const next = prev.filter(d => d.fileId !== fileId);
@@ -859,8 +973,8 @@ function ChatContent() {
             }
             fetchFreshSuggestions(activeFileId, suggestions);
         } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : 'Unknown error';
-            setMessages(prev => [...prev, { role: 'assistant', content: `Something went wrong: ${msg}` }]);
+            const raw = error instanceof Error ? error.message : 'Unknown error';
+            setMessages(prev => [...prev, { role: 'assistant', content: friendlyError(raw), isError: true }]);
         } finally {
             setIsTyping(false);
         }
@@ -1076,7 +1190,18 @@ function ChatContent() {
                             return (
                                 <button
                                     key={ds.fileId}
-                                    onClick={() => { setActiveFileId(ds.fileId); setActiveFileType(ds.type); }}
+                                    onClick={() => {
+                                        setActiveFileId(ds.fileId);
+                                        setActiveFileType(ds.type);
+                                        if (ds.type === 'pdf' && showCsvPanel) {
+                                            setShowCsvPanel(false);
+                                            setShowPdfPanel(true);
+                                        }
+                                        if (ds.type === 'csv' && showPdfPanel) {
+                                            setShowPdfPanel(false);
+                                            setShowCsvPanel(true);
+                                        }
+                                    }}
                                     className="flex items-center gap-1.5 sm:gap-2 text-xs px-2.5 sm:px-3 py-1.5 rounded-lg transition-all duration-150 shrink-0"
                                     style={isActive ? {
                                         background: 'rgba(37,99,235,0.18)',
@@ -1351,6 +1476,26 @@ function ChatContent() {
                                                         }}
                                                     >
                                                         {msg.content}
+                                                    </div>
+                                                ) : msg.isError ? (
+                                                    <div className="max-w-[96%] sm:max-w-[82%] flex gap-2 sm:gap-2.5">
+                                                        <div
+                                                            className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                                                            style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)' }}
+                                                        >
+                                                            <AlertCircle className="w-3 h-3" style={{ color: '#f87171' }} />
+                                                        </div>
+                                                        <div
+                                                            className="text-sm leading-relaxed px-3 py-2.5"
+                                                            style={{
+                                                                background: 'rgba(239,68,68,0.06)',
+                                                                border: '1px solid rgba(239,68,68,0.18)',
+                                                                borderRadius: '4px 14px 14px 14px',
+                                                                color: '#fca5a5',
+                                                            }}
+                                                        >
+                                                            {msg.content}
+                                                        </div>
                                                     </div>
                                                 ) : (
                                                     <div className="group max-w-[96%] sm:max-w-[82%] flex gap-2 sm:gap-2.5">
@@ -1665,6 +1810,7 @@ function ChatContent() {
                         <CsvPanel
                             data={csvPanelData}
                             name={activeDatasetName ?? ''}
+                            fileId={activeFileId ?? undefined}
                             onClose={() => setShowCsvPanel(false)}
                         />
                     </div>
@@ -1723,6 +1869,7 @@ function ChatContent() {
                         <CsvPanel
                             data={csvPanelData}
                             name={activeDatasetName ?? ''}
+                            fileId={activeFileId ?? undefined}
                             onClose={() => setShowCsvPanel(false)}
                         />
                     </div>
