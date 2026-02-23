@@ -31,3 +31,31 @@ export function chunkText(text: string, minSize = 500, maxSize = 1000): string[]
 
     return chunks.filter(c => c.length > 0);
 }
+
+export interface TextChunk {
+  content: string;
+  pageNumber: number;
+}
+
+export function chunkTextWithPages(text: string, minSize = 500, maxSize = 1000): TextChunk[] {
+  // Split by form-feed to get pages (1-indexed)
+  const pages = text.split('\f');
+  const result: TextChunk[] = [];
+
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+    const pageText = pages[pageIdx].trim();
+    if (!pageText) continue;
+    const pageNum = pageIdx + 1;
+    // Use the existing chunking logic on the page text
+    const pageChunks = chunkText(pageText, minSize, maxSize);
+    for (const c of pageChunks) {
+      if (c) result.push({ content: c, pageNumber: pageNum });
+    }
+  }
+
+  // If no page breaks found, fall back to regular chunking with page=1
+  if (result.length === 0) {
+    return chunkText(text, minSize, maxSize).map(c => ({ content: c, pageNumber: 1 }));
+  }
+  return result;
+}

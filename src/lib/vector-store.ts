@@ -3,7 +3,10 @@ import { supabaseAdmin } from './supabase';
 /**
  * Efficiently inserts multiple chunks into Supabase.
  */
-export async function storeChunks(fileId: string, chunks: { content: string; embedding: number[] }[]) {
+export async function storeChunks(
+    fileId: string,
+    chunks: { content: string; embedding: number[]; pageNumber?: number }[]
+): Promise<void> {
     const { error } = await supabaseAdmin
         .from('chunks')
         .insert(
@@ -11,6 +14,7 @@ export async function storeChunks(fileId: string, chunks: { content: string; emb
                 file_id: fileId,
                 content: chunk.content,
                 embedding: chunk.embedding,
+                page_number: chunk.pageNumber ?? null,
             }))
         );
 
@@ -41,7 +45,7 @@ export async function searchSimilarChunks(
         throw new Error('Failed to search for similar context');
     }
 
-    return data as { id: string; content: string; similarity: number }[];
+    return data as { id: string; content: string; similarity: number; page_number: number | null }[];
 }
 
 /**

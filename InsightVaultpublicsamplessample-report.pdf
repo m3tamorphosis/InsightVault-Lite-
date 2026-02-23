@@ -1,0 +1,100 @@
+%PDF-1.4
+1 0 obj
+<</Type /Catalog /Pages 2 0 R>>
+endobj
+2 0 obj
+<</Type /Pages /Kids [3 0 R 5 0 R] /Count 2>>
+endobj
+3 0 obj
+<</Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources <</Font <</F1 7 0 R>>>> /Contents 4 0 R>>
+endobj
+4 0 obj
+<</Length 489>>
+stream
+BT
+/F1 16 Tf
+50 730 Td
+(InsightVault Sample Report) Tj
+0 -14 Td
+/F1 10 Tf
+(Q4 2024 - Philippine Sales and HR Analytics) Tj
+ET
+q 50 710 512 1 re f Q
+BT
+/F1 13 Tf
+50 690 Td
+(Executive Summary) Tj
+0 -20 Td
+/F1 10 Tf
+(This report covers Q4 2024 performance across all regional offices in the Philippines.) Tj
+0 -15 Td
+(Data was collected from 30 employees across Marketing, IT, HR, and Operations.) Tj
+0 -15 Td
+(Total combined revenue reached PHP 7.2 million with 2207 total units sold.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources <</Font <</F1 7 0 R>>>> /Contents 6 0 R>>
+endobj
+6 0 obj
+<</Length 1220>>
+stream
+BT
+/F1 13 Tf
+50 730 Td
+(Revenue by Product) Tj
+0 -20 Td
+/F1 10 Tf
+(Laptop X generated the highest total revenue at PHP 3.46 million across 12 transactions.) Tj
+0 -15 Td
+(Router Pro contributed PHP 2.79 million with consistent demand across all cities.) Tj
+0 -15 Td
+(Tablet Z accounted for PHP 1.62 million with strong performance in Cebu.) Tj
+0 -30 Td
+/F1 13 Tf
+(Department Performance) Tj
+0 -20 Td
+/F1 10 Tf
+(IT Department: 10 employees, avg salary PHP 74960, avg experience 7.0 years.) Tj
+0 -15 Td
+(Marketing: 8 employees, avg salary PHP 53337, avg experience 5.4 years.) Tj
+0 -15 Td
+(HR: 5 employees, avg salary PHP 59340, avg experience 7.6 years.) Tj
+0 -15 Td
+(Operations: 5 employees, avg salary PHP 43140, avg experience 4.8 years.) Tj
+0 -30 Td
+/F1 13 Tf
+(Key Insights) Tj
+0 -20 Td
+/F1 10 Tf
+(1. Manila is the top revenue city with 11 employees generating PHP 2.9M.) Tj
+0 -15 Td
+(2. Employees aged 25-30 showed the highest productivity-to-salary ratio.) Tj
+0 -15 Td
+(3. November and June were peak sales months across all product lines.) Tj
+0 -15 Td
+(4. IT department commands a 40% salary premium over Operations.) Tj
+0 -15 Td
+(5. High unit sales do not always correlate with high revenue per transaction.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<</Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding>>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000056 00000 n 
+0000000117 00000 n 
+0000000237 00000 n 
+0000000775 00000 n 
+0000000895 00000 n 
+0000002165 00000 n 
+trailer
+<</Size 8 /Root 1 0 R>>
+startxref
+2260
+%%EOF

@@ -1,8 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
+
+const ACCEPTED = '.csv,.pdf';
+
+function getFileKind(file: File): 'csv' | 'pdf' | null {
+    const n = file.name.toLowerCase();
+    if (n.endsWith('.csv')) return 'csv';
+    if (n.endsWith('.pdf')) return 'pdf';
+    return null;
+}
+
+const FEATURES = [
+    { icon: BarChart2, label: 'CSV analytics', sub: 'Top-N, group-by, trends, aggregations' },
+    { icon: FileSearch, label: 'PDF document Q&A', sub: 'Semantic search over text content' },
+    { icon: Zap, label: 'Instant visualizations', sub: 'Charts generated automatically' },
+];
 
 export default function UploadPage() {
     const router = useRouter();
@@ -10,120 +25,149 @@ export default function UploadPage() {
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const [isDragging, setIsDragging] = useState(false);
+    const [recentFiles, setRecentFiles] = useState<Array<{name: string; fileId: string; type: string; timestamp: number}>>([]);
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('iv_recent_files');
+            if (raw) setRecentFiles(JSON.parse(raw));
+        } catch { /* ignore */ }
+    }, []);
+
+    const removeRecentFile = (e: React.MouseEvent, fileId: string) => {
+        e.stopPropagation();
+        const updated = recentFiles.filter(f => f.fileId !== fileId);
+        setRecentFiles(updated);
+        try { localStorage.setItem('iv_recent_files', JSON.stringify(updated)); } catch { /* ignore */ }
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
+        const f = e.target.files?.[0];
+        if (f && getFileKind(f)) {
+            setFile(f);
             setStatus('idle');
+            setErrorMsg('');
         }
     };
 
     const handleUpload = async () => {
         if (!file) return;
         setStatus('uploading');
-
         try {
             const formData = new FormData();
             formData.append('file', file);
-
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData,
-            });
-
+            const response = await fetch('/api/upload', { method: 'POST', body: formData });
             const result = await response.json();
-
             if (response.ok) {
                 setStatus('success');
                 setTimeout(() => {
-                    router.push(`/chat?fileId=${result.fileId}`);
+                    router.push(`/chat?fileId=${result.fileId}&type=${result.fileType ?? 'csv'}&name=${encodeURIComponent(file.name)}`);
                 }, 1000);
             } else {
                 throw new Error(result.error || 'Upload failed');
             }
-        } catch (error: any) {
-            console.error(error);
-            setErrorMsg(error.message);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Upload failed';
+            setErrorMsg(msg);
             setStatus('error');
         }
     };
 
     const isReady = !!file && status !== 'uploading';
+    const fileKind = file ? getFileKind(file) : null;
+    const isPDF = fileKind === 'pdf';
 
     return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden bg-[#09090b]">
-
+        <div
+            className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden"
+            style={{ background: 'var(--bg-page)' }}
+        >
             {/* Grid dot background */}
-            <div className="absolute inset-0 bg-grid-dots opacity-60 pointer-events-none" />
+            <div className="absolute inset-0 bg-grid-dots opacity-30 pointer-events-none" />
 
-            {/* Radial vignette */}
-            <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                    background: 'radial-gradient(ellipse 80% 60% at 50% 40%, rgba(59,130,246,0.06) 0%, transparent 70%)',
-                }}
-            />
+            {/* Radial vignettes */}
+            <div className="absolute inset-0 pointer-events-none" style={{
+                background: 'radial-gradient(ellipse 70% 55% at 50% 35%, rgba(37,99,235,0.08) 0%, transparent 65%)',
+            }} />
+            <div className="absolute inset-0 pointer-events-none" style={{
+                background: 'radial-gradient(ellipse 50% 35% at 50% 100%, rgba(124,58,237,0.05) 0%, transparent 65%)',
+            }} />
+            <div className="absolute inset-0 pointer-events-none" style={{
+                background: 'radial-gradient(ellipse 30% 20% at 15% 20%, rgba(59,130,246,0.04) 0%, transparent 70%)',
+            }} />
 
             {/* Card */}
             <div
                 className="relative z-10 w-full max-w-[440px] mx-4 animate-float-up"
                 style={{
-                    background: 'rgba(18,18,20,0.97)',
-                    border: '1px solid rgba(63,63,70,0.7)',
-                    borderRadius: '16px',
-                    boxShadow: '0 0 0 1px rgba(0,0,0,0.5), 0 24px 64px rgba(0,0,0,0.6)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: '20px',
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 40px 100px rgba(0,0,0,0.6), 0 0 80px rgba(59,130,246,0.07)',
                 }}
             >
-                {/* Card top accent line */}
-                <div
-                    className="absolute top-0 left-8 right-8 h-px"
-                    style={{ background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent)' }}
-                />
+                {/* Top accent line */}
+                <div className="absolute top-0 left-10 right-10 h-px" style={{
+                    background: 'linear-gradient(90deg, transparent, rgba(59,130,246,0.6), rgba(139,92,246,0.4), transparent)',
+                }} />
 
                 <div className="px-8 pt-8 pb-7">
 
                     {/* Header */}
                     <div className="mb-7">
-                        {/* Logo mark */}
                         <div className="flex items-center gap-2.5 mb-5">
                             <div
                                 className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                                style={{
-                                    background: 'rgba(59,130,246,0.15)',
-                                    border: '1px solid rgba(59,130,246,0.3)',
-                                }}
+                                style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)' }}
                             >
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                    <rect x="1" y="7" width="3" height="6" rx="0.5" fill="#3b82f6" />
-                                    <rect x="5.5" y="4" width="3" height="9" rx="0.5" fill="#3b82f6" opacity="0.7" />
-                                    <rect x="10" y="1" width="3" height="12" rx="0.5" fill="#3b82f6" opacity="0.45" />
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <defs>
+                                        <linearGradient id="up-g1" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#60a5fa" />
+                                            <stop offset="100%" stopColor="#2563eb" />
+                                        </linearGradient>
+                                        <linearGradient id="up-g2" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#818cf8" />
+                                            <stop offset="100%" stopColor="#3b82f6" />
+                                        </linearGradient>
+                                        <linearGradient id="up-g3" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#a78bfa" />
+                                            <stop offset="100%" stopColor="#7c3aed" />
+                                        </linearGradient>
+                                    </defs>
+                                    <rect x="1"    y="9"   width="3.5" height="6.5"  rx="1.1" fill="url(#up-g1)" />
+                                    <rect x="6.25" y="5.5" width="3.5" height="10"   rx="1.1" fill="url(#up-g2)" />
+                                    <rect x="11.5" y="2"   width="3.5" height="13.5" rx="1.1" fill="url(#up-g3)" />
                                 </svg>
                             </div>
                             <span
                                 className="text-[11px] font-medium tracking-[0.15em] uppercase"
-                                style={{ fontFamily: 'var(--font-mono)', color: '#71717a' }}
+                                style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}
                             >
                                 InsightVault
                             </span>
                         </div>
 
-                        <h1
-                            className="text-[26px] font-semibold leading-tight mb-2"
-                            style={{ color: '#f4f4f5', letterSpacing: '-0.02em' }}
-                        >
-                            Analyze your data<br />with natural language
+                        <h1 className="text-[27px] font-semibold leading-tight mb-2" style={{ letterSpacing: '-0.025em' }}>
+                            <span style={{ color: 'var(--text-primary)' }}>Analyze your data</span>
+                            <br />
+                            <span style={{
+                                background: 'linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%)',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                backgroundClip: 'text',
+                            }}>
+                                with natural language
+                            </span>
                         </h1>
-                        <p
-                            className="text-sm leading-relaxed"
-                            style={{ color: '#71717a' }}
-                        >
-                            Upload a CSV file and start asking questions. No SQL, no dashboards — just answers.
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                            Drop in a spreadsheet or document and ask anything — InsightVault handles the analysis for you.
                         </p>
                     </div>
 
                     {/* Drop zone */}
                     <div
-                        className="relative group mb-5"
+                        className="relative group mb-4"
                         onDragEnter={() => setIsDragging(true)}
                         onDragLeave={() => setIsDragging(false)}
                         onDragOver={e => e.preventDefault()}
@@ -131,68 +175,94 @@ export default function UploadPage() {
                             e.preventDefault();
                             setIsDragging(false);
                             const dropped = e.dataTransfer.files[0];
-                            if (dropped && dropped.name.endsWith('.csv')) {
+                            if (dropped && getFileKind(dropped)) {
                                 setFile(dropped);
                                 setStatus('idle');
+                                setErrorMsg('');
                             }
                         }}
                         style={{
-                            borderRadius: '10px',
-                            border: `1px dashed ${isDragging ? 'rgba(59,130,246,0.7)' : file ? 'rgba(59,130,246,0.4)' : 'rgba(63,63,70,0.8)'}`,
+                            borderRadius: '12px',
+                            border: `1px dashed ${isDragging ? 'rgba(59,130,246,0.7)' : file ? 'rgba(59,130,246,0.45)' : 'var(--border-strong-2)'}`,
                             background: isDragging
                                 ? 'rgba(59,130,246,0.06)'
-                                : file
-                                ? 'rgba(59,130,246,0.04)'
-                                : 'rgba(24,24,27,0.5)',
+                                : file ? 'rgba(59,130,246,0.04)'
+                                : 'var(--bg-element-2)',
                             transition: 'border-color 0.2s, background 0.2s',
-                            boxShadow: isDragging ? 'var(--blue-glow)' : 'none',
+                            boxShadow: isDragging ? 'var(--blue-glow), inset 0 0 40px rgba(59,130,246,0.04)' : 'none',
                         }}
                     >
                         <input
                             type="file"
-                            accept=".csv"
+                            accept={ACCEPTED}
                             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                             onChange={handleFileChange}
                         />
+
+                        {/* Remove file button */}
+                        {file && (
+                            <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); setFile(null); setStatus('idle'); setErrorMsg(''); }}
+                                className="absolute top-2.5 right-2.5 z-10 w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-150 pointer-events-auto"
+                                title="Remove file"
+                                style={{
+                                    background: 'rgba(239,68,68,0.1)',
+                                    border: '1px solid rgba(239,68,68,0.2)',
+                                    color: '#f87171',
+                                }}
+                                onMouseEnter={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.18)';
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(239,68,68,0.4)';
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.1)';
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(239,68,68,0.2)';
+                                }}
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        )}
 
                         <div className="flex flex-col items-center justify-center py-9 px-4 text-center pointer-events-none select-none">
                             {file ? (
                                 <>
                                     <div
-                                        className="w-11 h-11 rounded-lg flex items-center justify-center mb-3"
+                                        className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
                                         style={{
                                             background: 'rgba(59,130,246,0.12)',
                                             border: '1px solid rgba(59,130,246,0.25)',
+                                            boxShadow: '0 0 20px rgba(59,130,246,0.1)',
                                         }}
                                     >
-                                        <FileText className="w-5 h-5" style={{ color: '#3b82f6' }} />
+                                        {isPDF
+                                            ? <FileType className="w-5 h-5" style={{ color: '#60a5fa' }} />
+                                            : <FileText className="w-5 h-5" style={{ color: '#60a5fa' }} />
+                                        }
                                     </div>
-                                    <p className="text-sm font-medium mb-0.5" style={{ color: '#e4e4e7' }}>
+                                    <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                                         {file.name}
                                     </p>
-                                    <p
-                                        className="text-xs"
-                                        style={{ fontFamily: 'var(--font-mono)', color: '#52525b' }}
-                                    >
-                                        {(file.size / 1024).toFixed(1)} KB — click to replace
+                                    <p className="text-xs" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-faint)' }}>
+                                        {(file.size / 1024).toFixed(1)} KB · {isPDF ? 'PDF document' : 'CSV spreadsheet'} — click to replace
                                     </p>
                                 </>
                             ) : (
                                 <>
                                     <div
-                                        className="w-11 h-11 rounded-lg flex items-center justify-center mb-3"
+                                        className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
                                         style={{
-                                            background: 'rgba(39,39,42,0.8)',
-                                            border: '1px solid rgba(63,63,70,0.6)',
+                                            background: 'var(--bg-muted-2)',
+                                            border: '1px solid var(--border-strong)',
                                         }}
                                     >
-                                        <Upload className="w-5 h-5" style={{ color: '#52525b' }} />
+                                        <Upload className="w-5 h-5" style={{ color: 'var(--text-faint)' }} />
                                     </div>
-                                    <p className="text-sm font-medium mb-0.5" style={{ color: '#a1a1aa' }}>
-                                        Drop your CSV file here
+                                    <p className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                                        Drop your file here
                                     </p>
-                                    <p className="text-xs" style={{ color: '#52525b' }}>
-                                        or click to browse — CSV files only
+                                    <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+                                        or click to browse · CSV or PDF · max 50 MB
                                     </p>
                                 </>
                             )}
@@ -203,7 +273,7 @@ export default function UploadPage() {
                     <button
                         onClick={handleUpload}
                         disabled={!isReady}
-                        className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200"
+                        className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200"
                         style={
                             status === 'success'
                                 ? {
@@ -214,39 +284,33 @@ export default function UploadPage() {
                                 }
                                 : isReady
                                 ? {
-                                    background: '#2563eb',
+                                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                                     border: '1px solid rgba(59,130,246,0.4)',
                                     color: '#fff',
-                                    boxShadow: '0 0 20px rgba(37,99,235,0.3)',
+                                    boxShadow: '0 0 24px rgba(37,99,235,0.4), 0 4px 12px rgba(37,99,235,0.2)',
                                     cursor: 'pointer',
                                 }
                                 : {
-                                    background: 'rgba(39,39,42,0.6)',
-                                    border: '1px solid rgba(63,63,70,0.5)',
-                                    color: '#3f3f46',
+                                    background: 'var(--bg-muted-3)',
+                                    border: '1px solid var(--border-strong)',
+                                    color: 'var(--text-ghost)',
                                     cursor: 'not-allowed',
                                 }
                         }
                     >
                         {status === 'uploading' ? (
-                            <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Processing data...
-                            </>
+                            <><Loader2 className="w-4 h-4 animate-spin" />{isPDF ? 'Embedding document…' : 'Loading data…'}</>
                         ) : status === 'success' ? (
-                            <>
-                                <CheckCircle className="w-4 h-4" />
-                                Ready — redirecting...
-                            </>
+                            <><CheckCircle className="w-4 h-4" />Ready — redirecting…</>
                         ) : (
-                            'Start analyzing'
+                            'Start analyzing →'
                         )}
                     </button>
 
                     {/* Error */}
                     {status === 'error' && (
                         <div
-                            className="mt-3 px-3 py-2.5 rounded-lg flex items-start gap-2 text-xs animate-fade-in"
+                            className="mt-3 px-3 py-2.5 rounded-xl flex items-start gap-2 text-xs animate-fade-in"
                             style={{
                                 background: 'rgba(239,68,68,0.08)',
                                 border: '1px solid rgba(239,68,68,0.2)',
@@ -260,29 +324,77 @@ export default function UploadPage() {
 
                     {/* Feature list */}
                     <div
-                        className="mt-6 pt-5 space-y-2.5"
-                        style={{ borderTop: '1px solid rgba(39,39,42,0.8)' }}
+                        className="mt-6 pt-5 space-y-3"
+                        style={{ borderTop: '1px solid var(--border-default)' }}
                     >
-                        {[
-                            ['Ask questions in plain English', 'No SQL required'],
-                            ['Instant visualizations', 'Charts generated automatically'],
-                            ['Multi-dataset support', 'Compare across files'],
-                        ].map(([label, sub]) => (
-                            <div key={label} className="flex items-center gap-2.5">
+                        {FEATURES.map(({ icon: Icon, label, sub }) => (
+                            <div key={label} className="flex items-start gap-3">
                                 <div
-                                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                                    style={{ background: '#3b82f6' }}
-                                />
+                                    className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-px"
+                                    style={{
+                                        background: 'rgba(59,130,246,0.1)',
+                                        border: '1px solid rgba(59,130,246,0.15)',
+                                    }}
+                                >
+                                    <Icon className="w-3 h-3" style={{ color: '#60a5fa' }} />
+                                </div>
                                 <div>
-                                    <span className="text-xs font-medium" style={{ color: '#a1a1aa' }}>
+                                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
                                         {label}
                                     </span>
-                                    <span className="text-xs ml-1.5" style={{ color: '#3f3f46' }}>
+                                    <span className="text-xs ml-1.5" style={{ color: 'var(--text-ghost)' }}>
                                         {sub}
                                     </span>
                                 </div>
                             </div>
                         ))}
+
+                        {/* Recent files */}
+                        {recentFiles.length > 0 && (
+                            <div className="mt-5">
+                                <p className="text-[11px] uppercase tracking-widest mb-2.5" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>Recent</p>
+                                <div className="space-y-1.5">
+                                    {recentFiles.slice(0, 5).map(f => (
+                                        <div
+                                            key={f.fileId}
+                                            className="group flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-150"
+                                            style={{ background: 'var(--bg-element)', border: '1px solid var(--border-default)' }}
+                                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(59,130,246,0.4)'; }}
+                                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-default)'; }}
+                                        >
+                                            {/* Clickable file area */}
+                                            <button
+                                                onClick={() => router.push(`/chat?fileId=${f.fileId}&type=${f.type}&name=${encodeURIComponent(f.name)}`)}
+                                                className="flex-1 flex items-center gap-2.5 text-left min-w-0"
+                                                style={{ color: 'var(--text-muted)', background: 'none', border: 'none', padding: 0 }}
+                                            >
+                                                {f.type === 'pdf'
+                                                    ? <FileType className="w-3.5 h-3.5 shrink-0" style={{ color: '#f59e0b' }} />
+                                                    : <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: '#3b82f6' }} />
+                                                }
+                                                <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-muted)' }}>{f.name}</span>
+                                                <span className="text-[10px] uppercase shrink-0 mr-1" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
+                                                    {f.type}
+                                                </span>
+                                                <ArrowRight className="w-3 h-3 shrink-0" style={{ color: 'var(--text-faint)' }} />
+                                            </button>
+
+                                            {/* Remove button */}
+                                            <button
+                                                onClick={e => removeRecentFile(e, f.fileId)}
+                                                title="Remove from recent"
+                                                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150"
+                                                style={{ color: 'var(--text-faint)', background: 'transparent' }}
+                                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#f87171'; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.1)'; }}
+                                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -290,9 +402,9 @@ export default function UploadPage() {
             {/* Footer */}
             <p
                 className="relative z-10 mt-6 text-[11px]"
-                style={{ fontFamily: 'var(--font-mono)', color: '#3f3f46' }}
+                style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}
             >
-                InsightVault · CSV analytics via AI
+                InsightVault · CSV & PDF analytics via AI
             </p>
         </div>
     );

@@ -22,9 +22,10 @@ export async function createEmbeddings(inputs: string[]) {
                 input: batch,
             });
             all.push(...response.data.map(item => item.embedding));
-        } catch (error: any) {
-            console.error('OpenAI Embeddings Error (full):', JSON.stringify(error?.message || error));
-            throw new Error(`OpenAI Error: ${error?.message || JSON.stringify(error)}`);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : JSON.stringify(error);
+            console.error('OpenAI Embeddings Error (full):', msg);
+            throw new Error(`OpenAI Error: ${msg}`);
         }
     }
     return all;
