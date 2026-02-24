@@ -1,6 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   serverExternalPackages: ['pdf-parse', 'pdfjs-dist'],
+  outputFileTracingIncludes: {
+    '/api/upload': [
+      './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+      './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+    ],
+    '/api/upload/route': [
+      './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+      './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+    ],
+  },
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
   // Workaround for Next.js 15.5.x bug: htmlLimitedBots must be explicitly set
