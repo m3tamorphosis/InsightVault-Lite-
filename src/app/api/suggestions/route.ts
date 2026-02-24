@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { openai, createQueryEmbedding } from '@/lib/openai';
+import { getOpenAI, createQueryEmbedding } from '@/lib/openai';
 import { getCsvRows, getFileType } from '@/lib/csv-store';
 import { searchSimilarChunks } from '@/lib/vector-store';
 
@@ -30,6 +30,7 @@ function parseSuggestions(text: string | null | undefined): string[] | null {
 export async function GET(req: Request) {
   let fallback = FALLBACK_CSV;
   try {
+    const openai = getOpenAI();
     const { searchParams } = new URL(req.url);
     const fileId = searchParams.get('fileId');
     if (!fileId) return NextResponse.json({ suggestions: fallback });
@@ -127,3 +128,4 @@ Return ONLY a JSON array of 4 strings. No markdown, no explanation.`,
     return NextResponse.json({ suggestions: fallback });
   }
 }
+

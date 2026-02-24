@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type OpenAI from 'openai';
-import { openai, createQueryEmbedding } from '@/lib/openai';
+import { getOpenAI, createQueryEmbedding } from '@/lib/openai';
 import { searchSimilarChunks } from '@/lib/vector-store';
 import { getCsvRows, getFileType } from '@/lib/csv-store';
 
@@ -736,6 +736,7 @@ function sseStream(
 
 export async function POST(req: Request) {
   try {
+    const openai = getOpenAI();
     const { message, fileId, history = [] } = await req.json();
 
     if (!message || !fileId) {
@@ -932,3 +933,4 @@ Guidelines:
     return NextResponse.json({ error: 'Chat processing failed' }, { status: 500 });
   }
 }
+

@@ -1,8 +1,20 @@
 import OpenAI from 'openai';
 
-export const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+let client: OpenAI | null = null;
+
+export function getOpenAI(): OpenAI {
+    if (client) return client;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+        throw new Error(
+            'The OPENAI_API_KEY environment variable is missing or empty; set it before calling OpenAI APIs.'
+        );
+    }
+
+    client = new OpenAI({ apiKey });
+    return client;
+}
 
 // text-embedding-3-small: max 300,000 tokens per request
 // Each CSV row is typically 100-600 tokens; 100 rows/batch stays well under the limit.
@@ -13,6 +25,7 @@ const EMBEDDING_BATCH_SIZE = 100;
  * Automatically batches large inputs to stay within the 300K token/request limit.
  */
 export async function createEmbeddings(inputs: string[]) {
+    const openai = getOpenAI();
     const all: number[][] = [];
     for (let i = 0; i < inputs.length; i += EMBEDDING_BATCH_SIZE) {
         const batch = inputs.slice(i, i + EMBEDDING_BATCH_SIZE);
