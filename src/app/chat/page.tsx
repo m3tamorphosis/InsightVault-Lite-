@@ -274,6 +274,7 @@ interface Message {
     chartData?: ChartData;
     datasetName?: string;
     pinned?: boolean;
+    isAutoPreview?: boolean;
     previewData?: {
         headers: string[];
         rows: string[][];
@@ -302,6 +303,11 @@ const SUGGESTION_META = [
 ];
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
+const DEFAULT_ASSISTANT_GREETING = "Hello! I'm InsightVault. Ask me anything about your uploaded dataset.";
+
+function defaultMessages(): Message[] {
+    return [{ role: 'assistant', content: DEFAULT_ASSISTANT_GREETING }];
+}
 
 function loadStoredChat(fileId: string | null): { messages: Message[]; datasets: Dataset[] } | null {
     if (!fileId || typeof window === 'undefined') return null;
@@ -313,7 +319,11 @@ function loadStoredChat(fileId: string | null): { messages: Message[]; datasets:
             localStorage.removeItem(`iv_chat_${fileId}`);
             return null;
         }
-        return { messages: parsed.messages, datasets: parsed.datasets };
+        // Do not replay auto-generated CSV preview cards when reopening recent files.
+        const sanitizedMessages = (parsed.messages ?? []).filter(
+            m => !(m.isAutoPreview && m.previewData && !m.content?.trim())
+        );
+        return { messages: sanitizedMessages, datasets: parsed.datasets };
     } catch { return null; }
 }
 
@@ -618,12 +628,11 @@ function ChatContent() {
     const initialFileId = searchParams.get('fileId');
     const initialType = searchParams.get('type') ?? 'csv';
     const initialName = searchParams.get('name') ?? 'Dataset 1';
+    const isFreshOpen = searchParams.get('fresh') === '1';
 
-    const [datasets, setDatasets] = useState<Dataset[]>(() => {
-        const stored = loadStoredChat(initialFileId);
-        if (stored?.datasets?.length) return stored.datasets;
-        return initialFileId ? [{ fileId: initialFileId, name: initialName, type: initialType as 'csv' | 'pdf' }] : [];
-    });
+    const [datasets, setDatasets] = useState<Dataset[]>(
+        initialFileId ? [{ fileId: initialFileId, name: initialName, type: initialType as 'csv' | 'pdf' }] : []
+    );
     const [activeFileId, setActiveFileId] = useState<string | null>(initialFileId);
     const [activeFileType, setActiveFileType] = useState<'csv' | 'pdf'>(initialType as 'csv' | 'pdf');
     const [isAddingDataset, setIsAddingDataset] = useState(false);
@@ -639,10 +648,7 @@ function ChatContent() {
     const [showCsvPanel, setShowCsvPanel] = useState(false);
     const [csvPanelData, setCsvPanelData] = useState<PreviewData | null>(null);
 
-    const [messages, setMessages] = useState<Message[]>(() => {
-        const stored = loadStoredChat(initialFileId);
-        return stored?.messages ?? [{ role: 'assistant', content: "Hello! I'm InsightVault. Ask me anything about your uploaded dataset." }];
-    });
+    const [messages, setMessages] = useState<Message[]>(defaultMessages);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
@@ -655,6 +661,15 @@ function ChatContent() {
         initialType === 'pdf' ? FALLBACK_PDF : FALLBACK_CSV
     );
     const [loadingSuggestions, setLoadingSuggestions] = useState(!!initialFileId);
+
+    // Hydrate stored chat client-side to avoid SSR/client markup mismatch.
+    useEffect(() => {
+        if (!initialFileId) return;
+        const stored = loadStoredChat(initialFileId);
+        if (!stored) return;
+        if (stored.datasets?.length) setDatasets(stored.datasets);
+        if (stored.messages?.length) setMessages(stored.messages);
+    }, [initialFileId]);
 
     // Save recent file on mount for URL-loaded files
     useEffect(() => {
@@ -698,8 +713,22 @@ function ChatContent() {
 
     // Track which fileIds have had their preview shown this session
     const shownPreviewsRef = useRef<Set<string>>(new Set());
+    const initialAutoPreviewDoneRef = useRef(false);
+    const hydrateChatForFile = useCallback((fileId: string | null) => {
+        if (!fileId) {
+            setMessages(defaultMessages());
+            return;
+        }
+        const stored = loadStoredChat(fileId);
+        setMessages(stored?.messages ?? defaultMessages());
+    }, []);
 
-    const fetchAndShowPreview = async (fileId: string, datasetName: string, force = false) => {
+    const fetchAndShowPreview = async (
+        fileId: string,
+        datasetName: string,
+        options: { force?: boolean; appendToChat?: boolean; isAutoPreview?: boolean } = {}
+    ) => {
+        const { force = false, appendToChat = false, isAutoPreview = false } = options;
         const alreadyShown = shownPreviewsRef.current.has(fileId);
         if (!alreadyShown) shownPreviewsRef.current.add(fileId);
         try {
@@ -708,10 +737,11 @@ function ChatContent() {
             if (preview.headers?.length) {
                 const pd: PreviewData = { headers: preview.headers, rows: preview.rows, stats: preview.stats ?? [], totalRows: preview.totalRows };
                 setCsvPanelData(pd);
-                if (force || !alreadyShown) {
+                if (appendToChat && (force || !alreadyShown)) {
                     setMessages(prev => [...prev, {
                         role: 'assistant' as const,
                         content: '',
+                        isAutoPreview,
                         previewData: pd,
                         datasetName,
                     }]);
@@ -719,6 +749,13 @@ function ChatContent() {
             }
         } catch { /* ignore */ }
     };
+
+    const openCsvPreviewPanel = useCallback(() => {
+        if (!activeFileId || activeFileType !== 'csv') return;
+        setShowCsvPanel(true);
+        const ds = datasets.find(d => d.fileId === activeFileId);
+        void fetchAndShowPreview(activeFileId, ds?.name ?? '', { force: true });
+    }, [activeFileId, activeFileType, datasets]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!activeFileId) return;
@@ -730,12 +767,29 @@ function ChatContent() {
             .catch(() => {})
             .finally(() => setLoadingSuggestions(false));
 
-        // Auto-show CSV preview whenever a CSV dataset becomes active
-        if (activeFileType === 'csv') {
-            const ds = datasets.find(d => d.fileId === activeFileId);
-            fetchAndShowPreview(activeFileId, ds?.name ?? '');
-        }
+        // CSV preview is manual only; do not auto-show.
     }, [activeFileId, activeFileType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Upload-page entry: inject one auto preview message for fresh CSV upload.
+    useEffect(() => {
+        if (!isFreshOpen || initialAutoPreviewDoneRef.current) return;
+        if (!initialFileId || initialType !== 'csv') return;
+        if (activeFileId !== initialFileId || activeFileType !== 'csv') return;
+        initialAutoPreviewDoneRef.current = true;
+        const ds = datasets.find(d => d.fileId === activeFileId);
+        void fetchAndShowPreview(activeFileId, ds?.name ?? decodeURIComponent(initialName), {
+            force: true,
+            appendToChat: true,
+            isAutoPreview: true,
+        });
+    }, [isFreshOpen, initialFileId, initialType, initialName, activeFileId, activeFileType, datasets]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // If the user has opened the CSV panel, keep it synced to the active CSV file.
+    useEffect(() => {
+        if (!showCsvPanel || !activeFileId || activeFileType !== 'csv') return;
+        const ds = datasets.find(d => d.fileId === activeFileId);
+        void fetchAndShowPreview(activeFileId, ds?.name ?? '', { force: true });
+    }, [showCsvPanel, activeFileId, activeFileType, datasets]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // For saved/recent PDF files, stream preview from server endpoint.
     useEffect(() => {
@@ -761,7 +815,9 @@ function ChatContent() {
                 savedAt: Date.now(),
             }));
         } catch { /* storage full */ }
-    }, [messages, datasets, activeFileId]);
+        // activeFileId is intentionally excluded to avoid writing old messages under a newly selected dataset id.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, datasets]);
 
     const handleAddDataset = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -779,10 +835,13 @@ function ChatContent() {
                 setDatasets(prev => [...prev, newDataset]);
                 setActiveFileId(result.fileId);
                 setActiveFileType(fileType);
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: `${fileType === 'pdf' ? 'Document' : 'Dataset'} "${baseName}" loaded. You can now ask questions about it.`
-                }]);
+                setMessages([
+                    ...defaultMessages(),
+                    {
+                        role: 'assistant',
+                        content: `${fileType === 'pdf' ? 'Document' : 'Dataset'} "${baseName}" loaded. You can now ask questions about it.`
+                    }
+                ]);
 
                 // Save to recent files
                 saveRecentFile(baseName, result.fileId, fileType);
@@ -808,24 +867,13 @@ function ChatContent() {
                     })
                     .catch(() => {});
 
-                // CSV preview (mark as shown first so the activeFileId useEffect doesn't duplicate it)
+                // In-chat CSV upload: inject one auto preview message, but keep panel closed.
                 if (fileType === 'csv') {
-                    shownPreviewsRef.current.add(result.fileId);
-                    fetch(`/api/preview?fileId=${result.fileId}`)
-                        .then(r => r.json())
-                        .then((preview: PreviewData) => {
-                            if (preview.headers?.length) {
-                                setCsvPanelData(preview);
-                                setShowCsvPanel(true);
-                                setMessages(prev => [...prev, {
-                                    role: 'assistant',
-                                    content: '',
-                                    previewData: preview,
-                                    datasetName: baseName,
-                                }]);
-                            }
-                        })
-                        .catch(() => {});
+                    void fetchAndShowPreview(result.fileId, baseName, {
+                        force: true,
+                        appendToChat: true,
+                        isAutoPreview: true,
+                    });
                 }
             } else {
                 setMessages(prev => [...prev, { role: 'assistant', content: `Upload failed: ${result.error ?? 'Unknown error'}` }]);
@@ -842,7 +890,7 @@ function ChatContent() {
 
     const doRemoveDataset = (fileId: string) => {
         if (activeFileId === fileId) {
-            setMessages([{ role: 'assistant', content: "Hello! I'm InsightVault. Ask me anything about your uploaded dataset." }]);
+            setMessages(defaultMessages());
             setSuggestions([]);
             setLoadingSuggestions(false);
             try { localStorage.removeItem(`iv_chat_${fileId}`); } catch { /* ignore */ }
@@ -861,6 +909,7 @@ function ChatContent() {
                 const fallback = next.length > 0 ? next[next.length - 1] : null;
                 setActiveFileId(fallback ? fallback.fileId : null);
                 setActiveFileType(fallback ? fallback.type : 'csv');
+                hydrateChatForFile(fallback ? fallback.fileId : null);
             }
             return next;
         });
@@ -898,7 +947,7 @@ function ChatContent() {
         if (activeFileType === 'csv' && PREVIEW_TRIGGER.test(userMsg)) {
             setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
             const ds = datasets.find(d => d.fileId === activeFileId);
-            await fetchAndShowPreview(activeFileId, ds?.name ?? '', true);
+            await fetchAndShowPreview(activeFileId, ds?.name ?? '', { force: true, appendToChat: true });
             return;
         }
         const activeDataset = datasets.find(d => d.fileId === activeFileId);
@@ -998,7 +1047,7 @@ function ChatContent() {
     };
 
     const handleClearChat = useCallback(() => {
-        setMessages([{ role: 'assistant', content: "Hello! I'm InsightVault. Ask me anything about your uploaded dataset." }]);
+        setMessages(defaultMessages());
         if (activeFileId) {
             localStorage.removeItem(CHAT_STORAGE_KEY(activeFileId));
             setSuggestions([]);
@@ -1123,7 +1172,13 @@ function ChatContent() {
                         {/* CSV preview panel toggle */}
                         {activeFileType === 'csv' && (
                             <button
-                                onClick={() => setShowCsvPanel(v => !v)}
+                                onClick={() => {
+                                    if (showCsvPanel) {
+                                        setShowCsvPanel(false);
+                                        return;
+                                    }
+                                    openCsvPreviewPanel();
+                                }}
                                 title={showCsvPanel ? 'Hide data panel' : 'View data table'}
                                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150"
                                 style={showCsvPanel ? {
@@ -1191,6 +1246,9 @@ function ChatContent() {
                                 <button
                                     key={ds.fileId}
                                     onClick={() => {
+                                        if (activeFileId !== ds.fileId) {
+                                            hydrateChatForFile(ds.fileId);
+                                        }
                                         setActiveFileId(ds.fileId);
                                         setActiveFileType(ds.type);
                                         if (ds.type === 'pdf' && showCsvPanel) {

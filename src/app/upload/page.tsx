@@ -91,7 +91,7 @@ export default function UploadPage() {
                 }
                 setStatus('success');
                 setTimeout(() => {
-                    router.push(`/chat?fileId=${result.fileId}&type=${result.fileType ?? 'csv'}&name=${encodeURIComponent(file.name)}`);
+                    router.push(`/chat?fileId=${result.fileId}&type=${result.fileType ?? 'csv'}&name=${encodeURIComponent(file.name)}&fresh=1`);
                 }, 1000);
             } else {
                 throw new Error(result.error || 'Upload failed');

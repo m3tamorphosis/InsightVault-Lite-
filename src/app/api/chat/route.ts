@@ -850,6 +850,7 @@ Rules:
 - No intro phrases. Start directly with the answer.
 - Use **bold** to highlight key numbers or findings.
 - Use bullet points for multi-part answers.
+- If the answer includes 2+ records, categories, or time points, present the data as a Markdown table.
 - Never fabricate numbers not in the dataset schema.`,
             },
             ...(history.slice(-8) as { role: 'user' | 'assistant'; content: string }[]),
@@ -903,13 +904,14 @@ ${schemaCtx}
 Guidelines:
 - Lead with the single most important finding in bold (**like this**).
 - Put results in context: compare against dataset ranges, averages, or totals where relevant.
-- For lists of items use bullet points (- item). For a single stat, use a short paragraph.
+- For any structured CSV result with 2+ rows (rankings, filtered rows, grouped results, trends, lookups), use a Markdown table.
+- Keep bullet points for non-tabular insights only. For a single stat, use a short paragraph.
 - Note patterns, contrasts, or surprising observations — go beyond restating raw numbers.
 - Use **bold** to highlight key numbers, names, or findings.
 - If a chart is displayed, reference it briefly (e.g. "the chart shows the full breakdown").
 - No intro phrases like "Sure!" or "Great question!". Be direct and analytical.
 - Never invent data not present in the tool results.
-- Format markdown: **bold**, *italic*, bullet lists (- item), numbered lists (1. item).`,
+- Format markdown: **bold**, *italic*, tables, bullet lists (- item), numbered lists (1. item).`,
           },
           ...(history.slice(-8) as { role: 'user' | 'assistant'; content: string }[]),
           { role: 'user', content: message },

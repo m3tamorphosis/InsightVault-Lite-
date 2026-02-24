@@ -1,5 +1,10 @@
 import { supabaseAdmin } from './supabase';
 
+function sanitizePostgresText(input: string): string {
+    // PostgreSQL text values cannot contain null bytes.
+    return input.replace(/\u0000/g, '');
+}
+
 /**
  * Efficiently inserts multiple chunks into Supabase.
  */
@@ -12,7 +17,7 @@ export async function storeChunks(
         .insert(
             chunks.map(chunk => ({
                 file_id: fileId,
-                content: chunk.content,
+                content: sanitizePostgresText(chunk.content),
                 embedding: chunk.embedding,
                 page_number: chunk.pageNumber ?? null,
             }))
@@ -20,7 +25,10 @@ export async function storeChunks(
 
     if (error) {
         console.error('Supabase Store Chunks Error:', error);
-        throw new Error('Failed to store chunks in database');
+        const detail = [error.message, error.details, error.hint]
+            .filter(Boolean)
+            .join(' | ');
+        throw new Error(`Failed to store chunks in database: ${detail || 'Unknown Supabase error'}`);
     }
 }
 

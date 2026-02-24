@@ -28,15 +28,17 @@ function parseSuggestions(text: string | null | undefined): string[] | null {
 }
 
 export async function GET(req: Request) {
+  let fallback = FALLBACK_CSV;
   try {
     const { searchParams } = new URL(req.url);
     const fileId = searchParams.get('fileId');
-    if (!fileId) return NextResponse.json({ suggestions: FALLBACK_CSV });
+    if (!fileId) return NextResponse.json({ suggestions: fallback });
 
     const excludeRaw = searchParams.get('exclude');
     const exclude: string[] = excludeRaw ? (() => { try { return JSON.parse(excludeRaw); } catch { return []; } })() : [];
 
     const fileType = await getFileType(fileId);
+    fallback = fileType === 'pdf' ? FALLBACK_PDF : FALLBACK_CSV;
 
     // ── CSV: schema-aware suggestions ──────────────────────────────────────
     if (fileType === 'csv') {
@@ -122,6 +124,6 @@ Return ONLY a JSON array of 4 strings. No markdown, no explanation.`,
     return NextResponse.json({ suggestions: suggestions ?? FALLBACK_PDF });
 
   } catch {
-    return NextResponse.json({ suggestions: FALLBACK_CSV });
+    return NextResponse.json({ suggestions: fallback });
   }
 }
