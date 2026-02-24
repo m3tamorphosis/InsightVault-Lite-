@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 const FILES_BUCKET = 'insightvault-files';
 
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'fileId required' }, { status: 400 });
     }
 
-    const { data: fileMeta, error: fileError } = await supabaseAdmin
+    const { data: fileMeta, error: fileError } = await getSupabaseAdmin()
       .from('files')
       .select('type, name')
       .eq('id', fileId)
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'PDF files only' }, { status: 400 });
     }
 
-    const { data: objects, error: listError } = await supabaseAdmin.storage
+    const { data: objects, error: listError } = await getSupabaseAdmin().storage
       .from(FILES_BUCKET)
       .list(fileId, { limit: 100 });
     if (listError) {
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     }
 
     const objectPath = `${fileId}/${latest.name}`;
-    const { data: fileBlob, error: downloadError } = await supabaseAdmin.storage
+    const { data: fileBlob, error: downloadError } = await getSupabaseAdmin().storage
       .from(FILES_BUCKET)
       .download(objectPath);
     if (downloadError || !fileBlob) {
@@ -61,4 +61,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
 

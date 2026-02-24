@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './supabase';
+import { getSupabaseAdmin } from './supabase';
 
 function sanitizePostgresText(input: string): string {
     // PostgreSQL text values cannot contain null bytes.
@@ -12,7 +12,7 @@ export async function storeChunks(
     fileId: string,
     chunks: { content: string; embedding: number[]; pageNumber?: number }[]
 ): Promise<void> {
-    const { error } = await supabaseAdmin
+    const { error } = await getSupabaseAdmin()
         .from('chunks')
         .insert(
             chunks.map(chunk => ({
@@ -41,7 +41,7 @@ export async function searchSimilarChunks(
     threshold = 0.5,
     limit = 5
 ) {
-    const { data, error } = await supabaseAdmin.rpc('match_chunks', {
+    const { data, error } = await getSupabaseAdmin().rpc('match_chunks', {
         query_embedding: queryEmbedding,
         match_threshold: threshold,
         match_count: limit,
@@ -60,7 +60,7 @@ export async function searchSimilarChunks(
  * Fetches ALL content chunks for a file (used for full-dataset aggregations).
  */
 export async function getAllChunks(fileId: string): Promise<string[]> {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
         .from('chunks')
         .select('content')
         .eq('file_id', fileId)
@@ -73,3 +73,4 @@ export async function getAllChunks(fileId: string): Promise<string[]> {
 
     return (data as { content: string }[]).map(d => d.content);
 }
+

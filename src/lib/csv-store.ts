@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './supabase';
+import { getSupabaseAdmin } from './supabase';
 
 const BATCH_SIZE = 500;
 
@@ -16,7 +16,7 @@ export async function storeCsvRows(
       data,
     }));
 
-    const { error } = await supabaseAdmin.from('csv_rows').insert(batch);
+    const { error } = await getSupabaseAdmin().from('csv_rows').insert(batch);
     if (error) throw new Error(`Failed to store CSV rows: ${error.message}`);
   }
 }
@@ -25,7 +25,7 @@ export async function storeCsvRows(
  * Fetches all rows for a CSV file, normalising keys to lowercase strings.
  */
 export async function getCsvRows(fileId: string): Promise<Record<string, string>[]> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('csv_rows')
     .select('data')
     .eq('file_id', fileId)
@@ -46,7 +46,7 @@ export async function getCsvRows(fileId: string): Promise<Record<string, string>
  * Returns the file type ('csv' | 'pdf') from the files table.
  */
 export async function getFileType(fileId: string): Promise<'csv' | 'pdf'> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('files')
     .select('type')
     .eq('id', fileId)
@@ -55,3 +55,4 @@ export async function getFileType(fileId: string): Promise<'csv' | 'pdf'> {
   if (error || !data) throw new Error(`File not found or inaccessible: ${fileId}`);
   return (data as { type: string }).type as 'csv' | 'pdf';
 }
+

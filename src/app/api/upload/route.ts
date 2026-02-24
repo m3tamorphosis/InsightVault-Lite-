@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import { createEmbeddings } from '@/lib/openai';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 import { storeChunks } from '@/lib/vector-store';
 import { storeCsvRows } from '@/lib/csv-store';
 import { chunkText, chunkTextWithPages } from '@/lib/chunking';
@@ -10,7 +10,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const FILES_BUCKET = 'insightvault-files';
 
 async function ensureFilesBucket(): Promise<void> {
-  const { error } = await supabaseAdmin.storage.createBucket(FILES_BUCKET, {
+  const { error } = await getSupabaseAdmin().storage.createBucket(FILES_BUCKET, {
     public: false,
   });
   if (!error) return;
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     const fileType = isCSV ? 'csv' : 'pdf';
 
     // Register file in the files table
-    const { data: fileData, error: fileError } = await supabaseAdmin
+    const { data: fileData, error: fileError } = await getSupabaseAdmin()
       .from('files')
       .insert({ name: file.name, type: fileType })
       .select()
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
     const storagePath = `${fileId}/${Date.now()}-${safeName}`;
     await ensureFilesBucket();
-    const { error: storageError } = await supabaseAdmin.storage
+    const { error: storageError } = await getSupabaseAdmin().storage
       .from(FILES_BUCKET)
       .upload(storagePath, pdfBytes, {
         contentType: file.type || 'application/pdf',
@@ -139,3 +139,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg || 'Upload failed' }, { status: 500 });
   }
 }
+

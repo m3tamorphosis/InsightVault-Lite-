@@ -1,11 +1,34 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let supabaseClient: SupabaseClient | null = null;
+let supabaseAdminClient: SupabaseClient | null = null;
 
-// Use anon key for client-side operations
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+  return value;
+}
 
-// Use service role key for admin/server-side operations (like upserting embeddings)
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabaseUrl(): string {
+  return requiredEnv('NEXT_PUBLIC_SUPABASE_URL');
+}
+
+export function getSupabase(): SupabaseClient {
+  if (supabaseClient) return supabaseClient;
+
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseAnonKey = requiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+  return supabaseClient;
+}
+
+export function getSupabaseAdmin(): SupabaseClient {
+  if (supabaseAdminClient) return supabaseAdminClient;
+
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseServiceKey = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
+  supabaseAdminClient = createClient(supabaseUrl, supabaseServiceKey);
+  return supabaseAdminClient;
+}

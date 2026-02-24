@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 const FILES_BUCKET = 'insightvault-files';
 
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'fileId required' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from('files')
       .select('type')
       .eq('id', fileId)
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'PDF files only' }, { status: 400 });
     }
 
-    const { data: objects, error: listError } = await supabaseAdmin.storage
+    const { data: objects, error: listError } = await getSupabaseAdmin().storage
       .from(FILES_BUCKET)
       .list(fileId, { limit: 100 });
     if (listError) {
@@ -41,7 +41,7 @@ export async function GET(req: Request) {
     }
     const storagePath = `${fileId}/${latest.name}`;
 
-    const { data: signed, error: signedError } = await supabaseAdmin.storage
+    const { data: signed, error: signedError } = await getSupabaseAdmin().storage
       .from(FILES_BUCKET)
       .createSignedUrl(storagePath, 60 * 60);
 
@@ -55,3 +55,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
