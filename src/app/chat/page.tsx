@@ -303,10 +303,19 @@ const SUGGESTION_META = [
 ];
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
-const DEFAULT_ASSISTANT_GREETING = "Hello! I'm InsightVault. Ask me anything about your uploaded dataset.";
 
-function defaultMessages(): Message[] {
-    return [{ role: 'assistant', content: DEFAULT_ASSISTANT_GREETING }];
+function defaultAssistantGreeting(fileType?: 'csv' | 'pdf' | null): string {
+    if (fileType === 'pdf') {
+        return "Hello! I'm InsightVault. Ask me anything about your uploaded document.";
+    }
+    if (fileType === 'csv') {
+        return "Hello! I'm InsightVault. Ask me anything about your uploaded dataset.";
+    }
+    return "Hello! I'm InsightVault. Ask me anything about your uploaded file.";
+}
+
+function defaultMessages(fileType?: 'csv' | 'pdf' | null): Message[] {
+    return [{ role: 'assistant', content: defaultAssistantGreeting(fileType) }];
 }
 
 function loadStoredChat(fileId: string | null): { messages: Message[]; datasets: Dataset[] } | null {
@@ -714,13 +723,13 @@ function ChatContent() {
     // Track which fileIds have had their preview shown this session
     const shownPreviewsRef = useRef<Set<string>>(new Set());
     const initialAutoPreviewDoneRef = useRef(false);
-    const hydrateChatForFile = useCallback((fileId: string | null) => {
+    const hydrateChatForFile = useCallback((fileId: string | null, fileType?: 'csv' | 'pdf' | null) => {
         if (!fileId) {
-            setMessages(defaultMessages());
+            setMessages(defaultMessages(fileType));
             return;
         }
         const stored = loadStoredChat(fileId);
-        setMessages(stored?.messages ?? defaultMessages());
+        setMessages(stored?.messages ?? defaultMessages(fileType));
     }, []);
 
     const fetchAndShowPreview = async (
@@ -836,7 +845,7 @@ function ChatContent() {
                 setActiveFileId(result.fileId);
                 setActiveFileType(fileType);
                 setMessages([
-                    ...defaultMessages(),
+                    ...defaultMessages(fileType),
                     {
                         role: 'assistant',
                         content: `${fileType === 'pdf' ? 'Document' : 'Dataset'} "${baseName}" loaded. You can now ask questions about it.`
@@ -909,7 +918,7 @@ function ChatContent() {
                 const fallback = next.length > 0 ? next[next.length - 1] : null;
                 setActiveFileId(fallback ? fallback.fileId : null);
                 setActiveFileType(fallback ? fallback.type : 'csv');
-                hydrateChatForFile(fallback ? fallback.fileId : null);
+                hydrateChatForFile(fallback ? fallback.fileId : null, fallback ? fallback.type : null);
             }
             return next;
         });
@@ -1047,13 +1056,13 @@ function ChatContent() {
     };
 
     const handleClearChat = useCallback(() => {
-        setMessages(defaultMessages());
+        setMessages(defaultMessages(activeFileType));
         if (activeFileId) {
             localStorage.removeItem(CHAT_STORAGE_KEY(activeFileId));
             setSuggestions([]);
             fetchFreshSuggestions(activeFileId);
         }
-    }, [activeFileId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [activeFileId, activeFileType]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleExport = () => {
         const lines = [`# InsightVault Chat\n`, `*${new Date().toLocaleString()}*\n`];
@@ -1247,7 +1256,7 @@ function ChatContent() {
                                     key={ds.fileId}
                                     onClick={() => {
                                         if (activeFileId !== ds.fileId) {
-                                            hydrateChatForFile(ds.fileId);
+                                            hydrateChatForFile(ds.fileId, ds.type);
                                         }
                                         setActiveFileId(ds.fileId);
                                         setActiveFileType(ds.type);
@@ -1326,7 +1335,7 @@ function ChatContent() {
                                 }}
                             >
                                 <AlertCircle className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">No dataset loaded</span>
+                                <span className="hidden sm:inline">No file loaded</span>
                             </div>
                         )}
                     </div>
@@ -1807,7 +1816,7 @@ function ChatContent() {
                                 value={input}
                                 onChange={e => setInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleSend()}
-                                placeholder={activeFileId ? `Ask about ${activeDatasetName ?? 'your data'}…` : 'Add a dataset to start'}
+                                placeholder={activeFileId ? `Ask about ${activeDatasetName ?? 'your data'}…` : 'Add a file to start'}
                                 disabled={!activeFileId || isTyping}
                                 className="flex-1 bg-transparent text-sm focus:outline-none disabled:opacity-30 py-1.5"
                                 style={{ color: 'var(--text-secondary)', caretColor: '#3b82f6', fontFamily: 'var(--font-sans)' }}
