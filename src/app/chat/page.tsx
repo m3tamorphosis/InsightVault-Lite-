@@ -301,9 +301,10 @@ const SUGGESTION_META = [
     { label: 'numbers', icon: Hash },
     { label: 'insights', icon: TrendingUp },
 ];
-const RECOMMENDED_DEPLOY_MAX_MB = 20;
-const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const APP_MAX_UPLOAD_MB = 20;
+const DEPLOY_SAFE_UPLOAD_MB = IS_PRODUCTION ? 4 : APP_MAX_UPLOAD_MB;
+const DEPLOY_SAFE_UPLOAD_BYTES = DEPLOY_SAFE_UPLOAD_MB * 1024 * 1024;
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
 
@@ -338,7 +339,7 @@ async function parseUploadResponse(response: Response): Promise<UploadResponse> 
 
     const fromBody = typeof parsed.error === 'string' ? parsed.error : '';
     if (response.status === 413 || /request entity too large/i.test(fromBody)) {
-        return { error: `Upload failed: file is too large for this deployment limit. Recommended: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.` };
+        return { error: `Upload failed: deployment request-size limit reached. In this environment, keep files at ${DEPLOY_SAFE_UPLOAD_MB} MB or less.` };
     }
     return { error: fromBody || `Upload failed (HTTP ${response.status})` };
 }
@@ -860,11 +861,11 @@ function ChatContent() {
     const handleAddDataset = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (IS_PRODUCTION && file.size > RECOMMENDED_DEPLOY_MAX_BYTES) {
+        if (file.size > DEPLOY_SAFE_UPLOAD_BYTES) {
             const mb = (file.size / 1_048_576).toFixed(1);
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `Upload skipped: this file is ${mb} MB. Recommended for deployed reliability: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.`,
+                content: `Upload skipped: this file is ${mb} MB. In this environment, keep files at ${DEPLOY_SAFE_UPLOAD_MB} MB or less.`,
                 isError: true,
             }]);
             if (fileInputRef.current) fileInputRef.current.value = '';

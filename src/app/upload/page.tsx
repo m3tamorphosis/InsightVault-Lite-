@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
 
 const ACCEPTED = '.csv,.pdf';
-const RECOMMENDED_DEPLOY_MAX_MB = 20;
-const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const APP_MAX_UPLOAD_MB = 20;
+const APP_MAX_UPLOAD_BYTES = APP_MAX_UPLOAD_MB * 1024 * 1024;
+const DEPLOY_SAFE_UPLOAD_MB = IS_PRODUCTION ? 4 : APP_MAX_UPLOAD_MB;
+const DEPLOY_SAFE_UPLOAD_BYTES = DEPLOY_SAFE_UPLOAD_MB * 1024 * 1024;
 
 function getFileKind(file: File): 'csv' | 'pdf' | null {
     const n = file.name.toLowerCase();
@@ -43,7 +45,7 @@ async function parseUploadResponse(response: Response): Promise<UploadResponse> 
 
     const fromBody = typeof parsed.error === 'string' ? parsed.error : '';
     if (response.status === 413 || /request entity too large/i.test(fromBody)) {
-        return { error: `Upload failed: file is too large for this deployment limit. Recommended: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.` };
+        return { error: `Upload failed: deployment request-size limit reached. In this environment, keep files at ${DEPLOY_SAFE_UPLOAD_MB} MB or less.` };
     }
     return { error: fromBody || `Upload failed (HTTP ${response.status})` };
 }
@@ -77,12 +79,12 @@ export default function UploadPage() {
         if (!kind) return;
         setSizeWarning(null);
         const mb = f.size / 1_048_576;
-        if (IS_PRODUCTION && f.size > RECOMMENDED_DEPLOY_MAX_BYTES) {
-            setSizeWarning(`For deployed reliability, keep uploads at ${RECOMMENDED_DEPLOY_MAX_MB} MB or less. This file is ${mb.toFixed(1)} MB.`);
+        if (f.size > DEPLOY_SAFE_UPLOAD_BYTES) {
+            setSizeWarning(`For deployed reliability, keep uploads at ${DEPLOY_SAFE_UPLOAD_MB} MB or less. This file is ${mb.toFixed(1)} MB.`);
             return;
         }
-        if (f.size > 20 * 1024 * 1024) {
-            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) - max 20 MB.`);
+        if (f.size > APP_MAX_UPLOAD_BYTES) {
+            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) - max ${APP_MAX_UPLOAD_MB} MB.`);
             return;
         }
         if (kind === 'pdf' && f.size > 5_242_880) {
