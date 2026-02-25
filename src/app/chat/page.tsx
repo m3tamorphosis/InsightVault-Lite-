@@ -301,7 +301,7 @@ const SUGGESTION_META = [
     { label: 'numbers', icon: Hash },
     { label: 'insights', icon: TrendingUp },
 ];
-const RECOMMENDED_DEPLOY_MAX_MB = 15;
+const RECOMMENDED_DEPLOY_MAX_MB = 20;
 const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 

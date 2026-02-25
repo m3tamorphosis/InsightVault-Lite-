@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
 
 const ACCEPTED = '.csv,.pdf';
-const RECOMMENDED_DEPLOY_MAX_MB = 15;
+const RECOMMENDED_DEPLOY_MAX_MB = 20;
 const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -81,8 +81,8 @@ export default function UploadPage() {
             setSizeWarning(`For deployed reliability, keep uploads at ${RECOMMENDED_DEPLOY_MAX_MB} MB or less. This file is ${mb.toFixed(1)} MB.`);
             return;
         }
-        if (f.size > 52_428_800) {
-            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) — max 50 MB.`);
+        if (f.size > 20 * 1024 * 1024) {
+            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) - max 20 MB.`);
             return;
         }
         if (kind === 'pdf' && f.size > 5_242_880) {
@@ -327,7 +327,7 @@ export default function UploadPage() {
                                         Drop your file here
                                     </p>
                                     <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
-                                        or click to browse · CSV or PDF · max 50 MB
+                                        or click to browse · CSV or PDF · max 20 MB
                                     </p>
                                 </>
                             )}
