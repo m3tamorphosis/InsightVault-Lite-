@@ -29,7 +29,7 @@ type UploadResponse = {
     error?: string;
 };
 
-async function parseUploadResponse(response: Response): Promise<UploadResponse> {
+async function parseUploadResponse(response: Response, attemptedFileSizeBytes?: number): Promise<UploadResponse> {
     const raw = await response.text();
     let parsed: UploadResponse = {};
     if (raw) {
@@ -44,7 +44,14 @@ async function parseUploadResponse(response: Response): Promise<UploadResponse> 
 
     const fromBody = typeof parsed.error === 'string' ? parsed.error : '';
     if (response.status === 413 || /request entity too large/i.test(fromBody)) {
-        return { error: `Upload failed: deployment request-size limit reached. In this environment, keep files at ${DEPLOY_SAFE_UPLOAD_MB} MB or less.` };
+        const attemptedMb = typeof attemptedFileSizeBytes === 'number'
+            ? (attemptedFileSizeBytes / 1_048_576).toFixed(1)
+            : null;
+        return {
+            error: attemptedMb
+                ? `Upload failed: hosting request-size limit was reached. Your file is ${attemptedMb} MB, and this deployment limit is lower than that.`
+                : 'Upload failed: hosting request-size limit was reached before the API could process the file.',
+        };
     }
     return { error: fromBody || `Upload failed (HTTP ${response.status})` };
 }
@@ -83,7 +90,11 @@ export default function UploadPage() {
             return;
         }
         if (f.size > APP_MAX_UPLOAD_BYTES) {
-            setSizeWarning(`File is too large (${mb.toFixed(1)} MB) - max ${APP_MAX_UPLOAD_MB} MB.`);
+            if (kind === 'pdf') {
+                setSizeWarning(`PDF file is too large (${mb.toFixed(1)} MB) - max ${APP_MAX_UPLOAD_MB} MB.`);
+            } else {
+                setSizeWarning(`CSV file is too large (${mb.toFixed(1)} MB) - max ${APP_MAX_UPLOAD_MB} MB.`);
+            }
             return;
         }
         if (kind === 'pdf' && f.size > 5_242_880) {
@@ -108,7 +119,7 @@ export default function UploadPage() {
             const formData = new FormData();
             formData.append('file', file);
             const response = await fetch('/api/upload', { method: 'POST', body: formData });
-            const result = await parseUploadResponse(response);
+            const result = await parseUploadResponse(response, file.size);
             if (response.ok) {
                 if (!result.fileId) {
                     throw new Error('Upload succeeded but no file ID was returned');

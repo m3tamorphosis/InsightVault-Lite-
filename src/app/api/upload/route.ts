@@ -107,10 +107,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File too large (max 20 MB)' }, { status: 400 });
-    }
-
     const nameLower = file.name.toLowerCase();
     const isCSV = nameLower.endsWith('.csv');
     const isPDF = nameLower.endsWith('.pdf');
@@ -120,6 +116,10 @@ export async function POST(req: Request) {
         { error: 'Unsupported file type. Please upload a CSV or PDF file.' },
         { status: 400 }
       );
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      const msg = isPDF ? 'PDF file is too large (max 20 MB)' : 'CSV file is too large (max 20 MB)';
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
 
     const fileType = isCSV ? 'csv' : 'pdf';
