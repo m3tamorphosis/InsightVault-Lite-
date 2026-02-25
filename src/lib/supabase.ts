@@ -18,8 +18,16 @@ function getSupabaseUrl(): string {
 export function getSupabase(): SupabaseClient {
   if (supabaseClient) return supabaseClient;
 
-  const supabaseUrl = getSupabaseUrl();
-  const supabaseAnonKey = requiredAnyEnv('SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  // Client-side builds only expose NEXT_PUBLIC_* env vars reliably.
+  // Avoid dynamic process.env indexing here.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required.');
+  }
+  if (!supabaseAnonKey) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required.');
+  }
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
   return supabaseClient;
 }
