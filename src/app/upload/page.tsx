@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
 
 const ACCEPTED = '.csv,.pdf';
-const RECOMMENDED_DEPLOY_MAX_MB = 4;
+const RECOMMENDED_DEPLOY_MAX_MB = 15;
 const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
