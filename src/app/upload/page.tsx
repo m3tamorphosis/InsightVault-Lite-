@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
+import { getSupabase } from '@/lib/supabase';
 
 const ACCEPTED = '.csv,.pdf';
 const APP_MAX_UPLOAD_MB = 20;
@@ -26,6 +27,14 @@ const FEATURES = [
 type UploadResponse = {
     fileId?: string;
     fileType?: 'csv' | 'pdf';
+    error?: string;
+};
+
+type UploadSessionResponse = {
+    fileId?: string;
+    fileType?: 'csv' | 'pdf';
+    storagePath?: string;
+    token?: string;
     error?: string;
 };
 
@@ -54,6 +63,20 @@ async function parseUploadResponse(response: Response, attemptedFileSizeBytes?: 
         };
     }
     return { error: fromBody || `Upload failed (HTTP ${response.status})` };
+}
+
+async function parseUploadSessionResponse(response: Response): Promise<UploadSessionResponse> {
+    const raw = await response.text();
+    let parsed: UploadSessionResponse = {};
+    if (raw) {
+        try {
+            parsed = JSON.parse(raw) as UploadSessionResponse;
+        } catch {
+            parsed = { error: raw };
+        }
+    }
+    if (response.ok) return parsed;
+    return { error: parsed.error || `Upload session failed (HTTP ${response.status})` };
 }
 
 export default function UploadPage() {
@@ -116,36 +139,60 @@ export default function UploadPage() {
         if (!file) return;
         setStatus('uploading');
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const response = await fetch('/api/upload', { method: 'POST', body: formData });
-            const result = await parseUploadResponse(response, file.size);
-            if (response.ok) {
-                if (!result.fileId) {
-                    throw new Error('Upload succeeded but no file ID was returned');
-                }
-                const uploadedFileId = result.fileId;
-                const uploadedFileType = result.fileType ?? 'csv';
-                if ((result.fileType ?? 'csv') === 'pdf') {
-                    try {
-                        // Pass the original File object across client-side route transition.
-                        // Chat page will create its own object URL from this file.
-                        (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile = {
-                            fileId: uploadedFileId,
-                            file,
-                        };
-                        // Secondary fallback across route transition.
-                        const blobUrl = URL.createObjectURL(file);
-                        sessionStorage.setItem(`iv_pdf_blob_${uploadedFileId}`, blobUrl);
-                    } catch { /* ignore */ }
-                }
-                setStatus('success');
-                setTimeout(() => {
-                    router.push(`/chat?fileId=${uploadedFileId}&type=${uploadedFileType}&name=${encodeURIComponent(file.name)}&fresh=1`);
-                }, 1000);
-            } else {
-                throw new Error(result.error || 'Upload failed');
+            const sessionRes = await fetch('/api/upload-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+            });
+            const session = await parseUploadSessionResponse(sessionRes);
+            if (!sessionRes.ok) {
+                throw new Error(session.error || 'Failed to create upload session');
             }
+            if (!session.fileId || !session.storagePath || !session.token) {
+                throw new Error('Invalid upload session response');
+            }
+
+            const supabase = getSupabase();
+            const { error: signedUploadError } = await supabase.storage
+                .from('insightvault-files')
+                .uploadToSignedUrl(session.storagePath, session.token, file, {
+                    contentType: file.type || (session.fileType === 'pdf' ? 'application/pdf' : 'text/csv'),
+                });
+            if (signedUploadError) {
+                throw new Error(`Storage upload failed: ${signedUploadError.message}`);
+            }
+
+            const processRes = await fetch('/api/process-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileId: session.fileId,
+                    storagePath: session.storagePath,
+                    fileType: session.fileType ?? (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'),
+                    fileName: file.name,
+                }),
+            });
+            const result = await parseUploadResponse(processRes, file.size);
+            if (!processRes.ok) {
+                throw new Error(result.error || 'Upload processing failed');
+            }
+
+            const uploadedFileId = session.fileId;
+            const uploadedFileType = session.fileType ?? (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv');
+            if (uploadedFileType === 'pdf') {
+                try {
+                    (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile = {
+                        fileId: uploadedFileId,
+                        file,
+                    };
+                    const blobUrl = URL.createObjectURL(file);
+                    sessionStorage.setItem(`iv_pdf_blob_${uploadedFileId}`, blobUrl);
+                } catch { /* ignore */ }
+            }
+            setStatus('success');
+            setTimeout(() => {
+                router.push(`/chat?fileId=${uploadedFileId}&type=${uploadedFileType}&name=${encodeURIComponent(file.name)}&fresh=1`);
+            }, 1000);
         } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : 'Upload failed';
             setErrorMsg(msg);

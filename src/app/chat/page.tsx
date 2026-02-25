@@ -9,6 +9,7 @@ import {
     XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LabelList
 } from 'recharts';
 import type { ChartData } from '@/app/api/chat/route';
+import { getSupabase } from '@/lib/supabase';
 
 // ── Markdown helpers ───────────────────────────────────────────────────────
 
@@ -323,6 +324,14 @@ type UploadResponse = {
     error?: string;
 };
 
+type UploadSessionResponse = {
+    fileId?: string;
+    fileType?: 'csv' | 'pdf';
+    storagePath?: string;
+    token?: string;
+    error?: string;
+};
+
 async function parseUploadResponse(response: Response, attemptedFileSizeBytes?: number): Promise<UploadResponse> {
     const raw = await response.text();
     let parsed: UploadResponse = {};
@@ -348,6 +357,20 @@ async function parseUploadResponse(response: Response, attemptedFileSizeBytes?: 
         };
     }
     return { error: fromBody || `Upload failed (HTTP ${response.status})` };
+}
+
+async function parseUploadSessionResponse(response: Response): Promise<UploadSessionResponse> {
+    const raw = await response.text();
+    let parsed: UploadSessionResponse = {};
+    if (raw) {
+        try {
+            parsed = JSON.parse(raw) as UploadSessionResponse;
+        } catch {
+            parsed = { error: raw };
+        }
+    }
+    if (response.ok) return parsed;
+    return { error: parsed.error || `Upload session failed (HTTP ${response.status})` };
 }
 
 function defaultMessages(fileType?: 'csv' | 'pdf' | null): Message[] {
@@ -882,16 +905,47 @@ function ChatContent() {
         }
         setIsAddingDataset(true);
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const response = await fetch('/api/upload', { method: 'POST', body: formData });
-            const result = await parseUploadResponse(response, file.size);
-            if (response.ok) {
-                if (!result.fileId) {
-                    throw new Error('Upload succeeded but no file ID was returned');
-                }
-                const uploadedFileId = result.fileId;
-                const fileType = (result.fileType ?? 'csv') as 'csv' | 'pdf';
+            const sessionRes = await fetch('/api/upload-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+            });
+            const session = await parseUploadSessionResponse(sessionRes);
+            if (!sessionRes.ok) {
+                throw new Error(session.error || 'Failed to create upload session');
+            }
+            if (!session.fileId || !session.storagePath || !session.token) {
+                throw new Error('Invalid upload session response');
+            }
+
+            const fileType = (session.fileType ?? (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv')) as 'csv' | 'pdf';
+            const supabase = getSupabase();
+            const { error: signedUploadError } = await supabase.storage
+                .from('insightvault-files')
+                .uploadToSignedUrl(session.storagePath, session.token, file, {
+                    contentType: file.type || (fileType === 'pdf' ? 'application/pdf' : 'text/csv'),
+                });
+            if (signedUploadError) {
+                throw new Error(`Storage upload failed: ${signedUploadError.message}`);
+            }
+
+            const processRes = await fetch('/api/process-upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileId: session.fileId,
+                    storagePath: session.storagePath,
+                    fileType,
+                    fileName: file.name,
+                }),
+            });
+            const result = await parseUploadResponse(processRes, file.size);
+            if (!processRes.ok) {
+                throw new Error(result.error || 'Upload processing failed');
+            }
+
+            if (session.fileId) {
+                const uploadedFileId = session.fileId;
                 const baseName = file.name.replace(/\.(csv|pdf)$/i, '');
                 const newDataset: Dataset = { fileId: uploadedFileId, name: baseName, type: fileType };
                 setDatasets(prev => [...prev, newDataset]);
@@ -937,8 +991,6 @@ function ChatContent() {
                         isAutoPreview: true,
                     });
                 }
-            } else {
-                setMessages(prev => [...prev, { role: 'assistant', content: `Upload failed: ${result.error ?? 'Unknown error'}` }]);
             }
         } catch {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Upload failed. Please try again.' }]);
