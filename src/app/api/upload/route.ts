@@ -8,7 +8,7 @@ import { chunkText, chunkTextWithPages } from '@/lib/chunking';
 
 export const runtime = 'nodejs';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 const FILES_BUCKET = 'insightvault-files';
 
 let pdfGlobalsInitialized = false;
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File too large (max 50 MB)' }, { status: 400 });
+      return NextResponse.json({ error: 'File too large (max 20 MB)' }, { status: 400 });
     }
 
     const nameLower = file.name.toLowerCase();
