@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
 
 const ACCEPTED = '.csv,.pdf';
+const RECOMMENDED_DEPLOY_MAX_MB = 4;
+const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 function getFileKind(file: File): 'csv' | 'pdf' | null {
     const n = file.name.toLowerCase();
@@ -18,6 +21,32 @@ const FEATURES = [
     { icon: FileSearch, label: 'PDF document Q&A', sub: 'Semantic search over text content' },
     { icon: Zap, label: 'Instant visualizations', sub: 'Charts generated automatically' },
 ];
+
+type UploadResponse = {
+    fileId?: string;
+    fileType?: 'csv' | 'pdf';
+    error?: string;
+};
+
+async function parseUploadResponse(response: Response): Promise<UploadResponse> {
+    const raw = await response.text();
+    let parsed: UploadResponse = {};
+    if (raw) {
+        try {
+            parsed = JSON.parse(raw) as UploadResponse;
+        } catch {
+            parsed = { error: raw };
+        }
+    }
+
+    if (response.ok) return parsed;
+
+    const fromBody = typeof parsed.error === 'string' ? parsed.error : '';
+    if (response.status === 413 || /request entity too large/i.test(fromBody)) {
+        return { error: `Upload failed: file is too large for this deployment limit. Recommended: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.` };
+    }
+    return { error: fromBody || `Upload failed (HTTP ${response.status})` };
+}
 
 export default function UploadPage() {
     const router = useRouter();
@@ -48,6 +77,10 @@ export default function UploadPage() {
         if (!kind) return;
         setSizeWarning(null);
         const mb = f.size / 1_048_576;
+        if (IS_PRODUCTION && f.size > RECOMMENDED_DEPLOY_MAX_BYTES) {
+            setSizeWarning(`For deployed reliability, keep uploads at ${RECOMMENDED_DEPLOY_MAX_MB} MB or less. This file is ${mb.toFixed(1)} MB.`);
+            return;
+        }
         if (f.size > 52_428_800) {
             setSizeWarning(`File is too large (${mb.toFixed(1)} MB) — max 50 MB.`);
             return;
@@ -74,24 +107,29 @@ export default function UploadPage() {
             const formData = new FormData();
             formData.append('file', file);
             const response = await fetch('/api/upload', { method: 'POST', body: formData });
-            const result = await response.json();
+            const result = await parseUploadResponse(response);
             if (response.ok) {
+                if (!result.fileId) {
+                    throw new Error('Upload succeeded but no file ID was returned');
+                }
+                const uploadedFileId = result.fileId;
+                const uploadedFileType = result.fileType ?? 'csv';
                 if ((result.fileType ?? 'csv') === 'pdf') {
                     try {
                         // Pass the original File object across client-side route transition.
                         // Chat page will create its own object URL from this file.
                         (window as unknown as { __ivPendingPdfFile?: { fileId: string; file: File } }).__ivPendingPdfFile = {
-                            fileId: result.fileId,
+                            fileId: uploadedFileId,
                             file,
                         };
                         // Secondary fallback across route transition.
                         const blobUrl = URL.createObjectURL(file);
-                        sessionStorage.setItem(`iv_pdf_blob_${result.fileId}`, blobUrl);
+                        sessionStorage.setItem(`iv_pdf_blob_${uploadedFileId}`, blobUrl);
                     } catch { /* ignore */ }
                 }
                 setStatus('success');
                 setTimeout(() => {
-                    router.push(`/chat?fileId=${result.fileId}&type=${result.fileType ?? 'csv'}&name=${encodeURIComponent(file.name)}&fresh=1`);
+                    router.push(`/chat?fileId=${uploadedFileId}&type=${uploadedFileType}&name=${encodeURIComponent(file.name)}&fresh=1`);
                 }, 1000);
             } else {
                 throw new Error(result.error || 'Upload failed');

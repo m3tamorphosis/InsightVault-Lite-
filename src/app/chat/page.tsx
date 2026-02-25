@@ -301,6 +301,9 @@ const SUGGESTION_META = [
     { label: 'numbers', icon: Hash },
     { label: 'insights', icon: TrendingUp },
 ];
+const RECOMMENDED_DEPLOY_MAX_MB = 4;
+const RECOMMENDED_DEPLOY_MAX_BYTES = RECOMMENDED_DEPLOY_MAX_MB * 1024 * 1024;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
 
@@ -312,6 +315,32 @@ function defaultAssistantGreeting(fileType?: 'csv' | 'pdf' | null): string {
         return "Hello! I'm InsightVault. Ask me anything about your uploaded dataset.";
     }
     return "Hello! I'm InsightVault. Ask me anything about your uploaded file.";
+}
+
+type UploadResponse = {
+    fileId?: string;
+    fileType?: 'csv' | 'pdf';
+    error?: string;
+};
+
+async function parseUploadResponse(response: Response): Promise<UploadResponse> {
+    const raw = await response.text();
+    let parsed: UploadResponse = {};
+    if (raw) {
+        try {
+            parsed = JSON.parse(raw) as UploadResponse;
+        } catch {
+            parsed = { error: raw };
+        }
+    }
+
+    if (response.ok) return parsed;
+
+    const fromBody = typeof parsed.error === 'string' ? parsed.error : '';
+    if (response.status === 413 || /request entity too large/i.test(fromBody)) {
+        return { error: `Upload failed: file is too large for this deployment limit. Recommended: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.` };
+    }
+    return { error: fromBody || `Upload failed (HTTP ${response.status})` };
 }
 
 function defaultMessages(fileType?: 'csv' | 'pdf' | null): Message[] {
@@ -831,18 +860,32 @@ function ChatContent() {
     const handleAddDataset = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (IS_PRODUCTION && file.size > RECOMMENDED_DEPLOY_MAX_BYTES) {
+            const mb = (file.size / 1_048_576).toFixed(1);
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Upload skipped: this file is ${mb} MB. Recommended for deployed reliability: ${RECOMMENDED_DEPLOY_MAX_MB} MB or less.`,
+                isError: true,
+            }]);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
         setIsAddingDataset(true);
         try {
             const formData = new FormData();
             formData.append('file', file);
             const response = await fetch('/api/upload', { method: 'POST', body: formData });
-            const result = await response.json();
+            const result = await parseUploadResponse(response);
             if (response.ok) {
+                if (!result.fileId) {
+                    throw new Error('Upload succeeded but no file ID was returned');
+                }
+                const uploadedFileId = result.fileId;
                 const fileType = (result.fileType ?? 'csv') as 'csv' | 'pdf';
                 const baseName = file.name.replace(/\.(csv|pdf)$/i, '');
-                const newDataset: Dataset = { fileId: result.fileId, name: baseName, type: fileType };
+                const newDataset: Dataset = { fileId: uploadedFileId, name: baseName, type: fileType };
                 setDatasets(prev => [...prev, newDataset]);
-                setActiveFileId(result.fileId);
+                setActiveFileId(uploadedFileId);
                 setActiveFileType(fileType);
                 setMessages([
                     ...defaultMessages(fileType),
@@ -853,17 +896,17 @@ function ChatContent() {
                 ]);
 
                 // Save to recent files
-                saveRecentFile(baseName, result.fileId, fileType);
+                saveRecentFile(baseName, uploadedFileId, fileType);
 
                 // For PDF: store blob URL for in-session viewer
                 if (fileType === 'pdf') {
                     const blobUrl = URL.createObjectURL(file);
-                    pdfBlobUrls.current.set(result.fileId, blobUrl);
+                    pdfBlobUrls.current.set(uploadedFileId, blobUrl);
                     setPdfUrlVersion(v => v + 1);
                 }
 
                 // Auto-summary
-                fetch(`/api/summary?fileId=${result.fileId}`)
+                fetch(`/api/summary?fileId=${uploadedFileId}`)
                     .then(r => r.json())
                     .then((data: { summary: string }) => {
                         if (data.summary) {
@@ -878,7 +921,7 @@ function ChatContent() {
 
                 // In-chat CSV upload: inject one auto preview message, but keep panel closed.
                 if (fileType === 'csv') {
-                    void fetchAndShowPreview(result.fileId, baseName, {
+                    void fetchAndShowPreview(uploadedFileId, baseName, {
                         force: true,
                         appendToChat: true,
                         isAutoPreview: true,
