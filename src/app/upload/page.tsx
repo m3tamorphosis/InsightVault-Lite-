@@ -5,10 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
 
 const ACCEPTED = '.csv,.pdf';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const APP_MAX_UPLOAD_MB = 20;
 const APP_MAX_UPLOAD_BYTES = APP_MAX_UPLOAD_MB * 1024 * 1024;
-const DEPLOY_SAFE_UPLOAD_MB = IS_PRODUCTION ? 4 : APP_MAX_UPLOAD_MB;
+const DEPLOY_SAFE_UPLOAD_MB = APP_MAX_UPLOAD_MB;
 const DEPLOY_SAFE_UPLOAD_BYTES = DEPLOY_SAFE_UPLOAD_MB * 1024 * 1024;
 
 function getFileKind(file: File): 'csv' | 'pdf' | null {

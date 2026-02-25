@@ -301,9 +301,8 @@ const SUGGESTION_META = [
     { label: 'numbers', icon: Hash },
     { label: 'insights', icon: TrendingUp },
 ];
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const APP_MAX_UPLOAD_MB = 20;
-const DEPLOY_SAFE_UPLOAD_MB = IS_PRODUCTION ? 4 : APP_MAX_UPLOAD_MB;
+const DEPLOY_SAFE_UPLOAD_MB = APP_MAX_UPLOAD_MB;
 const DEPLOY_SAFE_UPLOAD_BYTES = DEPLOY_SAFE_UPLOAD_MB * 1024 * 1024;
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
