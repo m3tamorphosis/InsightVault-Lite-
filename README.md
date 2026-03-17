@@ -47,8 +47,9 @@ npm run dev
 ```
 
 ## 📸 Demo
-[Placeholder for screenshot: Upload Page]
-[Placeholder for screenshot: Chat Interface with Sources]
+<img width="1906" height="948" alt="image" src="https://github.com/user-attachments/assets/f3c409a2-605a-4bf3-9733-ab4762585f7a" />
+<img width="1909" height="701" alt="image" src="https://github.com/user-attachments/assets/a0a65922-f2b3-4718-80db-85e0ea0408d1" />
+<img width="1263" height="704" alt="image" src="https://github.com/user-attachments/assets/30917e11-0714-468d-b9e3-5f53f810ec9c" />
 
 ---
-Built by [Your Name] for modern data analysis workflows.
+Built by Carl John D. Haro for modern data analysis workflows.
