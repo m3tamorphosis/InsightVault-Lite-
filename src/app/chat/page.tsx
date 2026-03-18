@@ -8,10 +8,10 @@ import {
     PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis,
     XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, LabelList
 } from 'recharts';
-import type { ChartData } from '@/app/api/chat/route';
+import type { ChartData } from '@/lib/ai/types';
 import { getSupabase } from '@/lib/supabase';
 
-// ── Markdown helpers ───────────────────────────────────────────────────────
+// â”€â”€ Markdown helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function inlineMarkdown(text: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
@@ -39,10 +39,10 @@ function isSeparatorRow(line: string): boolean {
 
 function friendlyError(raw: string): string {
     if (!raw || raw === 'Unknown error') return 'Something went wrong. Please try again.';
-    if (/network|failed to fetch|ERR_/i.test(raw)) return "Can't reach the server — check your connection and try again.";
-    if (/file not found|inaccessible/i.test(raw)) return "This file couldn't be loaded — try re-uploading it.";
-    if (/rate.?limit|429/i.test(raw)) return 'Too many requests — wait a moment and try again.';
-    if (/timeout/i.test(raw)) return 'Request timed out — try asking a shorter question.';
+    if (/network|failed to fetch|ERR_/i.test(raw)) return "Can't reach the server - check your connection and try again.";
+    if (/file not found|inaccessible/i.test(raw)) return "This file couldn't be loaded - try re-uploading it.";
+    if (/rate.?limit|429/i.test(raw)) return 'Too many requests - wait a moment and try again.';
+    if (/timeout/i.test(raw)) return 'Request timed out - try asking a shorter question.';
     if (/csv files only/i.test(raw)) return 'This operation only works with CSV files.';
     return raw;
 }
@@ -58,8 +58,8 @@ function renderMarkdown(text: string) {
             elements.push(
                 <ul key={key} className="my-2 space-y-1 pl-4">
                     {listItems.map((item, i) => (
-                        <li key={i} className="flex gap-2 items-start">
-                            <span style={{ color: '#3b82f6', marginTop: '0.35em', flexShrink: 0 }}>›</span>
+                        <li key={i} className="flex gap-2 items-baseline">
+                            <span style={{ color: '#3b82f6', flexShrink: 0, lineHeight: 1 }}>{'>'}</span>
                             <span>{inlineMarkdown(item)}</span>
                         </li>
                     ))}
@@ -90,7 +90,7 @@ function renderMarkdown(text: string) {
                         Data Table
                     </span>
                     <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                        {dataRows.length} rows · {headers.length} columns
+                        {dataRows.length} rows  ? {headers.length} columns
                     </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -117,7 +117,7 @@ function renderMarkdown(text: string) {
                                             whiteSpace: 'nowrap',
                                             borderBottom: ri < dataRows.length - 1 ? '1px solid var(--border-default)' : 'none',
                                         }}>
-                                            {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>}
+                                            {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>-</span>}
                                         </td>
                                     ))}
                                 </tr>
@@ -137,16 +137,16 @@ function renderMarkdown(text: string) {
             tableLines.push(trimmed);
         } else {
             if (tableLines.length > 0) flushTable(`tbl-${i}`);
-            if (/^#{1,3}\s/.test(line)) {
+            if (/^#{1,6}\s/.test(line)) {
                 flushList(`fl-${i}`);
-                const content = line.replace(/^#{1,3}\s/, '');
+                const content = line.replace(/^#{1,6}\s/, '');
                 elements.push(
                     <p key={i} className="font-semibold mt-3 mb-1 text-[13px]" style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                         {inlineMarkdown(content)}
                     </p>
                 );
-            } else if (/^[-*•]\s/.test(line)) {
-                listItems.push(line.replace(/^[-*•]\s/, ''));
+            } else if (/^[-*-]\s/.test(line)) {
+                listItems.push(line.replace(/^[-*-]\s/, ''));
             } else if (/^\d+\.\s/.test(line)) {
                 listItems.push(line.replace(/^\d+\.\s/, ''));
             } else if (line.trim() === '') {
@@ -163,9 +163,54 @@ function renderMarkdown(text: string) {
     return elements;
 }
 
-// ── Chart renderer ────────────────────────────────────────────────────────
+// â”€â”€ Chart renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PIE_COLORS = ['#3b82f6','#8b5cf6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
+
+function buildComparisonChartFromMessage(content: string): ChartData | undefined {
+    const normalized = content.replace(/₱/g, 'PHP ');
+    const comparisonPattern = new RegExp(
+        String.raw`highest sales record is for (?:a|an)?\s*(.+?)\s+with a total of\s*(?:PHP\s*)?([\d,]+).*?lowest(?: sales record)?(?: is| was)?(?: for)?\s*(?:a|an)?\s*(.+?)\s+with a total of\s*(?:PHP\s*)?([\d,]+)`,
+        'is'
+    );
+    const match = normalized.match(comparisonPattern);
+    if (!match) return undefined;
+
+    const [, highestLabel, highestRaw, lowestLabel, lowestRaw] = match;
+    const highest = Number(highestRaw.replace(/,/g, ''));
+    const lowest = Number(lowestRaw.replace(/,/g, ''));
+
+    if (!Number.isFinite(highest) || !Number.isFinite(lowest)) return undefined;
+
+    return {
+        type: 'bar',
+        title: 'Highest vs Lowest Sales Record (total)',
+        xKey: 'label',
+        yKey: 'total',
+        data: [
+            { label: `${highestLabel.trim()} (highest)`, total: highest },
+            { label: `${lowestLabel.trim()} (lowest)`, total: lowest },
+        ],
+    };
+}
+
+function resolveMessageChart(message: Message): ChartData | undefined {
+    const fallbackComparisonChart = buildComparisonChartFromMessage(message.content);
+
+    if (!message.chartData) {
+        return fallbackComparisonChart;
+    }
+
+    if (fallbackComparisonChart && /top\s*1\s*by/i.test(message.chartData.title)) {
+        return fallbackComparisonChart;
+    }
+
+    if (fallbackComparisonChart && message.chartData.data.length < 2) {
+        return fallbackComparisonChart;
+    }
+
+    return message.chartData;
+}
 
 function ChartView({ chart }: { chart: ChartData }) {
     const margin = { top: 6, right: 8, left: 0, bottom: 50 };
@@ -263,7 +308,7 @@ function ChartView({ chart }: { chart: ChartData }) {
     );
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Dataset { fileId: string; name: string; type: 'csv' | 'pdf'; }
 interface Message {
@@ -273,6 +318,7 @@ interface Message {
     sources?: string[];
     context?: string;
     chartData?: ChartData;
+    actionStatus?: string;
     datasetName?: string;
     pinned?: boolean;
     isAutoPreview?: boolean;
@@ -408,7 +454,7 @@ function saveRecentFile(name: string, fileId: string, type: 'csv' | 'pdf') {
     } catch { /* ignore */ }
 }
 
-// ── Logo SVG ──────────────────────────────────────────────────────────────
+// â”€â”€ Logo SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Logo({ size = 13 }: { size?: number }) {
     return (
@@ -434,7 +480,7 @@ function Logo({ size = 13 }: { size?: number }) {
     );
 }
 
-// ── PDF Panel ─────────────────────────────────────────────────────────────
+// â”€â”€ PDF Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PdfPanel({
     pdfUrl,
@@ -513,7 +559,7 @@ function PdfPanel({
     );
 }
 
-// ── CSV Preview Panel ─────────────────────────────────────────────────────
+// â”€â”€ CSV Preview Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type PreviewData = {
     headers: string[];
@@ -563,7 +609,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
                     </span>
                     {data && totalRows > 0 && (
                         <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                            · {totalRows.toLocaleString()} rows · {data.headers.length} cols
+                             ? {totalRows.toLocaleString()} rows  ? {data.headers.length} cols
                         </span>
                     )}
                 </div>
@@ -604,7 +650,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
                                     <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                                         {row.map((cell, ci) => (
                                             <td key={ci} style={{ padding: '6px 14px', color: 'var(--text-muted)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border-default)' }}>
-                                                {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>}
+                                                {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>-</span>}
                                             </td>
                                         ))}
                                     </tr>
@@ -617,7 +663,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
                     {totalRows > PAGE_SIZE && (
                         <div className="shrink-0 flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
                             <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                                {isLoadingPage ? 'Loading…' : `rows ${rowStart}–${rowEnd} of ${totalRows.toLocaleString()}`}
+                                {isLoadingPage ? 'Loading...' : `rows ${rowStart}-${rowEnd} of ${totalRows.toLocaleString()}`}
                             </span>
                             <div className="flex items-center gap-1.5">
                                 <button
@@ -625,7 +671,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
                                     disabled={page === 0 || isLoadingPage}
                                     className="w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all disabled:opacity-30"
                                     style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-strong)', color: 'var(--text-dim)' }}
-                                >‹</button>
+                                >{'<'}</button>
                                 <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)', minWidth: '32px', textAlign: 'center' }}>
                                     {page + 1}/{totalPages}
                                 </span>
@@ -634,7 +680,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
                                     disabled={page >= totalPages - 1 || isLoadingPage}
                                     className="w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all disabled:opacity-30"
                                     style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-strong)', color: 'var(--text-dim)' }}
-                                >›</button>
+                                >{'>'}</button>
                             </div>
                         </div>
                     )}
@@ -688,7 +734,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
     );
 }
 
-// ── Chat content ──────────────────────────────────────────────────────────
+// â”€â”€ Chat content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ChatContent() {
     const router = useRouter();
@@ -969,20 +1015,6 @@ function ChatContent() {
                     setPdfUrlVersion(v => v + 1);
                 }
 
-                // Auto-summary
-                fetch(`/api/summary?fileId=${uploadedFileId}`)
-                    .then(r => r.json())
-                    .then((data: { summary: string }) => {
-                        if (data.summary) {
-                            setMessages(prev => [...prev, {
-                                role: 'assistant',
-                                content: data.summary,
-                                datasetName: baseName,
-                            }]);
-                        }
-                    })
-                    .catch(() => {});
-
                 // In-chat CSV upload: inject one auto preview message, but keep panel closed.
                 if (fileType === 'csv') {
                     void fetchAndShowPreview(uploadedFileId, baseName, {
@@ -1069,7 +1101,7 @@ function ChatContent() {
         setIsTyping(true);
         try {
             const history = messages.slice(1).slice(-10).map(m => ({ role: m.role, content: m.content }));
-            const response = await fetch('/api/chat', {
+            const response = await fetch('/api/query', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: userMsg, fileId: activeFileId, history }),
@@ -1102,7 +1134,7 @@ function ChatContent() {
                     if (!event.startsWith('data: ')) continue;
                     const data = JSON.parse(event.slice(6)) as {
                         chunk?: string; done?: boolean; error?: string;
-                        chartData?: ChartData; context?: string; sources?: string[];
+                        chartData?: ChartData; context?: string; sources?: string[]; actionStatus?: string | null; finalContent?: string;
                     };
                     if (data.chunk) {
                         streamedText += data.chunk;
@@ -1122,10 +1154,11 @@ function ChatContent() {
                             if (last?.role === 'assistant') {
                                 next[next.length - 1] = {
                                     ...last,
-                                    content: streamedText,
+                                    content: data.finalContent ?? streamedText,
                                     sources: data.sources,
                                     context: data.context,
                                     chartData: data.chartData,
+                                    actionStatus: data.actionStatus ?? undefined,
                                 };
                             }
                             return next;
@@ -1211,7 +1244,7 @@ function ChatContent() {
     return (
         <div className="flex flex-col h-screen" style={{ background: 'var(--bg-page)' }}>
 
-            {/* ── Header ── */}
+            {/* â”€â”€ Header â”€â”€ */}
             <header
                 className="relative shrink-0 sticky top-0 z-20 px-3 sm:px-5 py-2.5 sm:py-3"
                 style={{
@@ -1349,7 +1382,7 @@ function ChatContent() {
                         )}
                     </div>
 
-                    {/* Right: chips + add file + warning — scrollable on mobile */}
+                    {/* Right: chips + add file + warning - scrollable on mobile */}
                     <div className="flex items-center gap-2 flex-1 overflow-x-auto min-w-0 justify-end" style={{ scrollbarWidth: 'none' }}>
 
                         {/* Dataset chips */}
@@ -1425,7 +1458,7 @@ function ChatContent() {
                             <input ref={fileInputRef} type="file" accept=".csv,.pdf"
                                 className="hidden" onChange={handleAddDataset} disabled={isAddingDataset} />
                             {isAddingDataset
-                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span className="hidden sm:inline">Uploading…</span></>
+                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span className="hidden sm:inline">Uploading...</span></>
                                 : <><Plus className="w-3.5 h-3.5" /><span className="hidden sm:inline">Add file</span></>
                             }
                         </label>
@@ -1460,10 +1493,10 @@ function ChatContent() {
                 )}
             </header>
 
-            {/* ── Main content: chat + optional PDF side panel ── */}
+            {/* â”€â”€ Main content: chat + optional PDF side panel â”€â”€ */}
             <div className="flex flex-1 overflow-hidden">
 
-                {/* ── Chat column ── */}
+                {/* â”€â”€ Chat column â”€â”€ */}
                 <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
                     {/* Messages */}
@@ -1532,7 +1565,7 @@ function ChatContent() {
                                 >
                                     <input type="file" accept=".csv,.pdf" className="hidden" onChange={handleAddDataset} disabled={isAddingDataset} />
                                     {isAddingDataset
-                                        ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading…</>
+                                        ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading...</>
                                         : <><Plus className="w-4 h-4" />Add CSV or PDF</>
                                     }
                                 </label>
@@ -1699,14 +1732,14 @@ function ChatContent() {
                                                                 {msg.previewData && (
                                                                     <div className="mt-4 space-y-3">
 
-                                                                        {/* ── Data rows table ── */}
+                                                                        {/* â”€â”€ Data rows table â”€â”€ */}
                                                                         <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
                                                                             <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
                                                                                 <span className="text-[10px] uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
                                                                                     Data Preview
                                                                                 </span>
                                                                                 <span className="text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                                                                                    {msg.previewData.rows.length} rows · {msg.previewData.headers.length} columns
+                                                                                    {msg.previewData.rows.length} rows  ? {msg.previewData.headers.length} columns
                                                                                 </span>
                                                                             </div>
                                                                             <div className="overflow-x-auto">
@@ -1725,7 +1758,7 @@ function ChatContent() {
                                                                                             <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
                                                                                                 {row.map((cell, ci) => (
                                                                                                     <td key={ci} style={{ padding: '7px 16px', color: 'var(--text-muted)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: ri < msg.previewData!.rows.length - 1 ? '1px solid var(--border-default)' : 'none' }}>
-                                                                                                        {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>}
+                                                                                                        {cell || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>-</span>}
                                                                                                     </td>
                                                                                                 ))}
                                                                                             </tr>
@@ -1735,7 +1768,7 @@ function ChatContent() {
                                                                             </div>
                                                                         </div>
 
-                                                                        {/* ── Column stats table ── */}
+                                                                        {/* â”€â”€ Column stats table â”€â”€ */}
                                                                         {msg.previewData.stats.length > 0 && (
                                                                             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
                                                                                 <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
@@ -1804,7 +1837,7 @@ function ChatContent() {
                                                                 </button>
                                                             </div>
 
-                                                            {msg.chartData && <ChartView chart={msg.chartData} />}
+                                                            {resolveMessageChart(msg) && <ChartView chart={resolveMessageChart(msg)!} />}
 
                                                             {msg.datasetName && datasets.length > 1 && (
                                                                 <div className="flex items-center gap-1 px-1">
@@ -1901,7 +1934,7 @@ function ChatContent() {
                         )}
                     </div>
 
-                    {/* ── Input bar ── */}
+                    {/* â”€â”€ Input bar â”€â”€ */}
                     <div className="shrink-0 px-3 sm:px-4 pb-4 sm:pb-5 pt-2 sm:pt-3" style={{ borderTop: '1px solid var(--border-default)' }}>
                         <div
                             className="flex items-center gap-2 px-3 sm:px-4 py-2 max-w-3xl mx-auto transition-all duration-200"
@@ -1921,7 +1954,7 @@ function ChatContent() {
                                 value={input}
                                 onChange={e => setInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleSend()}
-                                placeholder={activeFileId ? `Ask about ${activeDatasetName ?? 'your data'}…` : 'Add a file to start'}
+                                placeholder={activeFileId ? `Ask about ${activeDatasetName ?? 'your data'}...` : 'Add a file to start'}
                                 disabled={!activeFileId || isTyping}
                                 className="flex-1 bg-transparent text-sm focus:outline-none disabled:opacity-30 py-1.5"
                                 style={{ color: 'var(--text-secondary)', caretColor: '#3b82f6', fontFamily: 'var(--font-sans)' }}
@@ -1946,12 +1979,12 @@ function ChatContent() {
                         </div>
 
                         <p className="text-center mt-2 text-[10px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-ghost)' }}>
-                            Enter to send · charts generated automatically · CSV &amp; PDF supported
+                            Enter to send  ? charts generated automatically  ? CSV &amp; PDF supported
                         </p>
                     </div>
                 </div>
 
-                {/* ── PDF side panel (desktop only) ── */}
+                {/* â”€â”€ PDF side panel (desktop only) â”€â”€ */}
                 {showPdfPanel && activeFileType === 'pdf' && (
                     <div
                         className="hidden md:flex flex-col shrink-0"
@@ -1969,7 +2002,7 @@ function ChatContent() {
                     </div>
                 )}
 
-                {/* ── CSV preview side panel (desktop only) ── */}
+                {/* â”€â”€ CSV preview side panel (desktop only) â”€â”€ */}
                 {showCsvPanel && activeFileType === 'csv' && (
                     <div
                         className="hidden md:flex flex-col shrink-0"
@@ -1989,7 +2022,7 @@ function ChatContent() {
                 )}
             </div>
 
-            {/* ── PDF mobile full-screen overlay ── */}
+            {/* â”€â”€ PDF mobile full-screen overlay â”€â”€ */}
             {showPdfPanel && activeFileType === 'pdf' && activePdfUrl && (
                 <div
                     className="md:hidden fixed inset-0 z-50 flex flex-col"
@@ -2015,7 +2048,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* ── CSV mobile full-screen overlay ── */}
+            {/* â”€â”€ CSV mobile full-screen overlay â”€â”€ */}
             {showCsvPanel && activeFileType === 'csv' && (
                 <div
                     className="md:hidden fixed inset-0 z-50 flex flex-col"
@@ -2048,7 +2081,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* ── Remove-dataset confirmation modal ── */}
+            {/* â”€â”€ Remove-dataset confirmation modal â”€â”€ */}
             {removeConfirm && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center"
@@ -2105,7 +2138,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* ── Scroll-to-bottom button ── */}
+            {/* â”€â”€ Scroll-to-bottom button â”€â”€ */}
             {!isAtBottom && (
                 <button
                     onClick={scrollToBottom}

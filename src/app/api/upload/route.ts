@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import { createEmbeddings } from '@/lib/openai';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getErrorMessage } from '@/lib/error-utils';
 import { storeChunks } from '@/lib/vector-store';
 import { storeCsvRows } from '@/lib/csv-store';
-import { chunkText, chunkTextWithPages } from '@/lib/chunking';
+import { chunkTextWithPages } from '@/lib/chunking';
 
 export const runtime = 'nodejs';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const FILES_BUCKET = 'insightvault-files';
 
 let pdfGlobalsInitialized = false;
@@ -123,18 +124,17 @@ export async function POST(req: Request) {
     }
 
     const fileType = isCSV ? 'csv' : 'pdf';
+    const category = isPDF ? 'document' : 'tabular';
 
-    // Register file in the files table
     const { data: fileData, error: fileError } = await getSupabaseAdmin()
       .from('files')
-      .insert({ name: file.name, type: fileType })
+      .insert({ name: file.name, type: fileType, source: file.name, category })
       .select()
       .single();
 
     if (fileError) throw fileError;
     const fileId: string = (fileData as { id: string }).id;
 
-    // ── CSV path: parse rows → store as JSONB ──────────────────────────────
     if (isCSV) {
       const text = await file.text();
       const { data, errors } = Papa.parse(text, {
@@ -161,12 +161,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── PDF path: extract text → chunk → embed → store vectors ────────────
     const pdfBytes = new Uint8Array(await file.arrayBuffer());
-    // Keep parsing and storage bytes separate because parser internals may detach buffers.
     const parseBytes = pdfBytes.slice();
 
-    // pdf-parse v2 uses a class-based API: new PDFParse({ data }) then .getText()
     await ensurePdfGlobals();
     const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: parseBytes });
@@ -190,7 +187,17 @@ export async function POST(req: Request) {
     const embeddings = await createEmbeddings(chunkContents);
     await storeChunks(
       fileId,
-      pageChunks.map((c, i) => ({ content: c.content, embedding: embeddings[i], pageNumber: c.pageNumber }))
+      pageChunks.map((c, i) => ({
+        content: c.content,
+        embedding: embeddings[i],
+        pageNumber: c.pageNumber,
+        metadata: {
+          fileType: 'pdf',
+          category,
+          source: file.name,
+          pageNumber: c.pageNumber,
+        },
+      }))
     );
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
@@ -206,6 +213,11 @@ export async function POST(req: Request) {
       throw new Error(`Failed to store PDF for preview: ${storageError.message}`);
     }
 
+    await getSupabaseAdmin()
+      .from('files')
+      .update({ storage_path: storagePath, source: file.name, category })
+      .eq('id', fileId);
+
     return NextResponse.json({
       success: true,
       message: `Processed ${pageChunks.length} chunks from ${file.name}`,
@@ -214,7 +226,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const msg = getErrorMessage(error);
     console.error('Upload API Error:', msg);
     return NextResponse.json({ error: msg || 'Upload failed' }, { status: 500 });
   }

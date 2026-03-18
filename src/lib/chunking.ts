@@ -1,35 +1,73 @@
-/**
- * Splits text into chunks of 500-1000 characters.
- * RAG requires chunking because:
- * 1. LLMs have context limits (too much text won't fit).
- * 2. It helps retrieve only the most relevant sections of data.
- * 3. It improves retrieval precision by focusing on smaller contexts.
- */
-export function chunkText(text: string, minSize = 500, maxSize = 1000): string[] {
-    const chunks: string[] = [];
-    let startIndex = 0;
+function normalizeParagraphs(text: string): string[] {
+    return text
+        .replace(/\r\n/g, '\n')
+        .split(/\n\s*\n+/)
+        .map(part => part.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+}
 
-    while (startIndex < text.length) {
-        let endIndex = startIndex + maxSize;
+function splitLargeParagraph(paragraph: string, maxSize: number): string[] {
+    if (paragraph.length <= maxSize) return [paragraph];
 
-        // If not at the end, try to find a good breaking point (period or newline)
-        if (endIndex < text.length) {
-            const remainingText = text.slice(startIndex, startIndex + maxSize + 200); // look ahead a bit
-            const lastPeriod = remainingText.lastIndexOf('.', maxSize);
-            const lastNewline = remainingText.lastIndexOf('\n', maxSize);
-
-            const breakPoint = Math.max(lastPeriod, lastNewline);
-
-            if (breakPoint > minSize) {
-                endIndex = startIndex + breakPoint + 1;
-            }
+    const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length <= 1) {
+        const parts: string[] = [];
+        for (let index = 0; index < paragraph.length; index += maxSize) {
+            parts.push(paragraph.slice(index, index + maxSize).trim());
         }
-
-        chunks.push(text.slice(startIndex, endIndex).trim());
-        startIndex = endIndex;
+        return parts.filter(Boolean);
     }
 
-    return chunks.filter(c => c.length > 0);
+    const chunks: string[] = [];
+    let current = '';
+
+    for (const sentence of sentences) {
+        const candidate = current ? `${current} ${sentence}` : sentence;
+        if (candidate.length <= maxSize) {
+            current = candidate;
+            continue;
+        }
+
+        if (current) chunks.push(current.trim());
+        current = sentence;
+    }
+
+    if (current) chunks.push(current.trim());
+    return chunks.filter(Boolean);
+}
+
+/**
+ * Splits text by sections and paragraphs first, then merges them into retrieval-friendly chunks.
+ */
+export function chunkText(text: string, minSize = 500, maxSize = 1200): string[] {
+    const chunks: string[] = [];
+    const paragraphs = normalizeParagraphs(text).flatMap(paragraph => splitLargeParagraph(paragraph, maxSize));
+
+    let current = '';
+    for (const paragraph of paragraphs) {
+        const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
+        if (candidate.length <= maxSize) {
+            current = candidate;
+            continue;
+        }
+
+        if (current) chunks.push(current.trim());
+        current = paragraph;
+    }
+
+    if (current) chunks.push(current.trim());
+
+    const merged: string[] = [];
+    for (const chunk of chunks) {
+        const previous = merged[merged.length - 1];
+        if (previous && previous.length < minSize) {
+            merged[merged.length - 1] = `${previous}\n\n${chunk}`.trim();
+        } else {
+            merged.push(chunk);
+        }
+    }
+
+    return merged.filter(Boolean);
 }
 
 export interface TextChunk {
@@ -38,7 +76,6 @@ export interface TextChunk {
 }
 
 export function chunkTextWithPages(text: string, minSize = 500, maxSize = 1000): TextChunk[] {
-  // Split by form-feed to get pages (1-indexed)
   const pages = text.split('\f');
   const result: TextChunk[] = [];
 
@@ -46,14 +83,12 @@ export function chunkTextWithPages(text: string, minSize = 500, maxSize = 1000):
     const pageText = pages[pageIdx].trim();
     if (!pageText) continue;
     const pageNum = pageIdx + 1;
-    // Use the existing chunking logic on the page text
     const pageChunks = chunkText(pageText, minSize, maxSize);
     for (const c of pageChunks) {
       if (c) result.push({ content: c, pageNumber: pageNum });
     }
   }
 
-  // If no page breaks found, fall back to regular chunking with page=1
   if (result.length === 0) {
     return chunkText(text, minSize, maxSize).map(c => ({ content: c, pageNumber: 1 }));
   }

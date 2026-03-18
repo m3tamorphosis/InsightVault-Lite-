@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import { createEmbeddings } from '@/lib/openai';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getErrorMessage } from '@/lib/error-utils';
 import { storeChunks } from '@/lib/vector-store';
 import { storeCsvRows } from '@/lib/csv-store';
 import { chunkTextWithPages } from '@/lib/chunking';
@@ -101,6 +102,7 @@ export async function POST(req: Request) {
     const storagePath = String(body.storagePath ?? '').trim();
     const fileType = body.fileType;
     const fileName = String(body.fileName ?? '').trim() || 'file';
+    const category = fileType === 'pdf' ? 'document' : 'tabular';
 
     if (!fileId || !storagePath || (fileType !== 'csv' && fileType !== 'pdf')) {
       return NextResponse.json({ error: 'Invalid processing payload' }, { status: 400 });
@@ -114,6 +116,11 @@ export async function POST(req: Request) {
     }
 
     if (fileType === 'csv') {
+      await getSupabaseAdmin()
+        .from('files')
+        .update({ storage_path: storagePath, source: fileName, category })
+        .eq('id', fileId);
+
       const text = await blob.text();
       const { data, errors } = Papa.parse(text, {
         header: true,
@@ -161,8 +168,23 @@ export async function POST(req: Request) {
     const embeddings = await createEmbeddings(chunkContents);
     await storeChunks(
       fileId,
-      pageChunks.map((c, i) => ({ content: c.content, embedding: embeddings[i], pageNumber: c.pageNumber }))
+      pageChunks.map((c, i) => ({
+        content: c.content,
+        embedding: embeddings[i],
+        pageNumber: c.pageNumber,
+        metadata: {
+          fileType: 'pdf',
+          category,
+          source: fileName,
+          pageNumber: c.pageNumber,
+        },
+      }))
     );
+
+    await getSupabaseAdmin()
+      .from('files')
+      .update({ storage_path: storagePath, source: fileName, category })
+      .eq('id', fileId);
 
     return NextResponse.json({
       success: true,
@@ -171,7 +193,7 @@ export async function POST(req: Request) {
       fileType: 'pdf',
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const msg = getErrorMessage(error);
     console.error('Process Upload API Error:', msg);
     return NextResponse.json({ error: msg || 'Upload processing failed' }, { status: 500 });
   }

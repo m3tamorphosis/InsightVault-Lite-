@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getErrorMessage } from '@/lib/error-utils';
 
 export const runtime = 'nodejs';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const FILES_BUCKET = 'insightvault-files';
 
 async function ensureFilesBucket(): Promise<void> {
@@ -19,6 +20,7 @@ async function ensureFilesBucket(): Promise<void> {
 type SessionRequest = {
   fileName?: string;
   fileSize?: number;
+  category?: string;
 };
 
 export async function POST(req: Request) {
@@ -26,6 +28,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as SessionRequest;
     const fileName = String(body.fileName ?? '').trim();
     const fileSize = Number(body.fileSize ?? 0);
+    const requestedCategory = String(body.category ?? '').trim() || null;
 
     if (!fileName) {
       return NextResponse.json({ error: 'Missing file name' }, { status: 400 });
@@ -47,11 +50,13 @@ export async function POST(req: Request) {
       const msg = isPDF ? 'PDF file is too large (max 20 MB)' : 'CSV file is too large (max 20 MB)';
       return NextResponse.json({ error: msg }, { status: 400 });
     }
+
     const fileType = isCSV ? 'csv' : 'pdf';
+    const category = requestedCategory || (fileType === 'pdf' ? 'document' : 'tabular');
 
     const { data: fileData, error: fileError } = await getSupabaseAdmin()
       .from('files')
-      .insert({ name: fileName, type: fileType })
+      .insert({ name: fileName, type: fileType, source: fileName, category })
       .select()
       .single();
 
@@ -78,8 +83,9 @@ export async function POST(req: Request) {
       token: signed.token,
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
+    const msg = getErrorMessage(error);
     console.error('Upload Session API Error:', msg);
     return NextResponse.json({ error: msg || 'Failed to create upload session' }, { status: 500 });
   }
 }
+

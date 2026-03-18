@@ -1,55 +1,72 @@
-# InsightVault Lite 🚀
+# InsightVault Lite
 
-A high-performance RAG (Retrieval-Augmented Generation) application built with Next.js, OpenAI, and Supabase. InsightVault Lite allows you to upload CSV datasets and chat with your data using AI that strictly follows your own context.
+InsightVault Lite is now organized as a production-style AI workflow built on Next.js, OpenAI, and Supabase. It supports structured query classification, retrieval orchestration, context processing, streamed response generation, and optional Slack or Resend delivery actions.
 
-## 🌟 Features
-- **CSV Data Ingestion**: Bulk upload and parse CSV files using PapaParse.
-- **RAG Pipeline**: Automated text embedding generation via OpenAI `text-embedding-3-small`.
-- **Vector Search**: Efficient similarity searches using Supabase `pgvector`.
-- **Clean UI**: A ChatGPT-style interface with Lucide icons and dark mode support.
-- **Context Awareness**: The AI acts as a data analyst, answering only from provided context.
+## Features
+- Multi-step AI workflow: classify -> retrieve -> process -> generate.
+- Agent-style routing for `summary`, `analysis`, `comparison`, and `action` intents.
+- Metadata-aware retrieval with source/category/file-type filters.
+- Improved paragraph-first chunking for document ingestion.
+- External action support for Slack webhooks and Resend email.
+- Streamed responses for the chat UI through `/api/query`.
 
-## 🛠 Tech Stack
-- **Frontend**: Next.js 14, Tailwind CSS, Lucide React
-- **Backend**: Next.js API Routes (Route Handlers)
-- **Database**: Supabase (PostgreSQL + pgvector)
-- **AI**: OpenAI API (GPT-4o & Embeddings)
-- **Parsing**: PapaParse
+## Architecture
+### Upload pipeline
+1. Upload file metadata is registered in `files`.
+2. CSV files are stored in `csv_rows`.
+3. PDF files are chunked by section/paragraph, embedded, and stored in `chunks` with metadata.
 
-## 🏗 Architecture
-1. **Upload**: User uploads CSV -> API parses rows -> OpenAI generates vectors -> Stored in Supabase.
-2. **Query**: User asks question -> API embeds question -> Similarity search in Supabase -> Context sent to GPT-4o -> Response with sources returned.
+### Query pipeline
+1. `classifyQuery()` determines intent and routing.
+2. `retrieveDocuments()` fetches matching rows or semantic chunks.
+3. `processContext()` builds a grounded context packet and warnings.
+4. `generateResponse()` streams the final answer.
+5. `maybeExecuteExternalAction()` optionally sends the result to Slack or email.
 
-## 🚀 Getting Started
-
-### 1. Clone the repo
-```bash
-git clone <your-repo-url>
-cd InsightVault
+## AI Modules
+```text
+src/lib/ai/
+  classifier.ts
+  retrieval.ts
+  processor.ts
+  agent.ts
+  types.ts
 ```
 
-### 2. Setup Environment Variables
-Create a `.env.local` file:
+## Environment Variables
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 OPENAI_API_KEY=your_openai_api_key
+SLACK_WEBHOOK_URL=your_slack_webhook_url
+RESEND_API_KEY=your_resend_api_key
+RESEND_FROM_EMAIL=reports@example.com
 ```
 
-### 3. Setup Database
-Run the SQL found in `supabase_schema.sql` in your Supabase SQL Editor.
-
-### 4. Install & Run
-```bash
-npm install
-npm run dev
+## Main API
+- `POST /api/query`
+- Request body:
+```json
+{
+  "message": "Summarize the main findings and send them to Slack",
+  "fileId": "your-file-id",
+  "history": [],
+  "filters": {
+    "category": "document"
+  },
+  "delivery": {
+    "slackWebhookUrl": "optional-override"
+  }
+}
 ```
 
-## 📸 Demo
-<img width="1906" height="948" alt="image" src="https://github.com/user-attachments/assets/f3c409a2-605a-4bf3-9733-ab4762585f7a" />
-<img width="1909" height="701" alt="image" src="https://github.com/user-attachments/assets/a0a65922-f2b3-4718-80db-85e0ea0408d1" />
-<img width="1263" height="704" alt="image" src="https://github.com/user-attachments/assets/30917e11-0714-468d-b9e3-5f53f810ec9c" />
+## Setup
+1. Run the SQL in `supabase_schema.sql`.
+2. Add your environment variables to `.env.local`.
+3. Install dependencies with `npm install`.
+4. Start the app with `npm run dev`.
 
----
-Built by Carl John D. Haro for modern data analysis workflows.
+## Notes
+- Existing upload routes remain available, but the chat UI now talks to `/api/query`.
+- PDF retrieval quality depends on the new metadata columns and `match_chunks` RPC signature in the SQL schema.
