@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Send, Loader2, Sparkles, AlertCircle, Plus, X, FileText, FileType, Eye, Hash, TrendingUp, BookOpen, ArrowLeft, Copy, Check, Trash2, Download, ChevronDown, Pin, Table2 } from 'lucide-react';
+import { Send, Loader2, Sparkles, AlertCircle, Plus, X, FileText, FileType, Eye, Hash, TrendingUp, BookOpen, ArrowLeft, Copy, Check, Trash2, Download, ChevronDown, Pin, Table2, LogOut, BadgeCheck } from 'lucide-react';
 import {
     BarChart, Bar, LineChart, Line,
     PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis,
@@ -45,6 +45,30 @@ function friendlyError(raw: string): string {
     if (/timeout/i.test(raw)) return 'Request timed out - try asking a shorter question.';
     if (/csv files only/i.test(raw)) return 'This operation only works with CSV files.';
     return raw;
+}
+
+function normalizeUploadError(error: unknown): string {
+    if (error instanceof Error && error.message.trim()) return error.message;
+
+    if (typeof error === 'string' && error.trim()) return error;
+
+    if (error && typeof error === 'object') {
+        if ('message' in error && typeof (error as { message?: unknown }).message === 'string') {
+            const message = String((error as { message?: unknown }).message ?? '').trim();
+            if (message) return message;
+        }
+
+        if ('type' in error && typeof (error as { type?: unknown }).type === 'string') {
+            return `Browser upload error (${String((error as { type?: unknown }).type)}). Please try uploading the file again.`;
+        }
+
+        const ctorName = (error as { constructor?: { name?: string } }).constructor?.name;
+        if (ctorName && ctorName !== 'Object') {
+            return `Upload failed with ${ctorName}. Please try uploading the file again.`;
+        }
+    }
+
+    return 'Upload failed before the browser finished sending the file. Please try again.';
 }
 
 function renderMarkdown(text: string) {
@@ -342,6 +366,46 @@ const FALLBACK_PDF = [
     'Find any specific numbers or statistics',
 ];
 
+function getInitials(label: string | null): string {
+    if (!label) return 'U';
+    const cleaned = label.includes('@') ? label.split('@')[0] : label;
+    const parts = cleaned.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'U';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function toSafeExportBase(name?: string | null): string {
+    const raw = (name ?? 'chat').replace(/\.[^.]+$/, '').trim();
+    const normalized = raw
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    return normalized || 'chat';
+}
+
+function parseExportedChatMarkdown(markdown: string): Message[] {
+    const normalized = markdown.replace(/\r\n/g, '\n').trim();
+    if (!normalized) return [];
+
+    const withoutHeader = normalized
+        .replace(/^#\s+InsightVault Chat\s*/i, '')
+        .replace(/^\*.*?\*\s*/m, '')
+        .trim();
+
+    const regex = /\*\*(You|InsightVault):\*\*\s*([\s\S]*?)(?=\n\*\*(?:You|InsightVault):\*\*|$)/g;
+    const messages: Message[] = [];
+
+    for (const match of withoutHeader.matchAll(regex)) {
+        const role = match[1] === 'You' ? 'user' : 'assistant';
+        const content = match[2].trim();
+        if (!content) continue;
+        messages.push({ role, content });
+    }
+
+    return messages;
+}
+
 const SUGGESTION_META = [
     { label: 'overview', icon: Eye },
     { label: 'details', icon: BookOpen },
@@ -353,6 +417,8 @@ const DEPLOY_SAFE_UPLOAD_MB = APP_MAX_UPLOAD_MB;
 const DEPLOY_SAFE_UPLOAD_BYTES = DEPLOY_SAFE_UPLOAD_MB * 1024 * 1024;
 
 const CHAT_STORAGE_KEY = (fileId: string) => `iv_chat_${fileId}`;
+const DATASETS_STORAGE_KEY = 'iv_chat_datasets';
+const ACTIVE_DATASET_STORAGE_KEY = 'iv_chat_active_dataset';
 
 function defaultAssistantGreeting(fileType?: 'csv' | 'pdf' | null): string {
     if (fileType === 'pdf') {
@@ -423,6 +489,45 @@ function defaultMessages(fileType?: 'csv' | 'pdf' | null): Message[] {
     return [{ role: 'assistant', content: defaultAssistantGreeting(fileType) }];
 }
 
+function dedupeDatasets(items: Dataset[]): Dataset[] {
+    const seen = new Set<string>();
+    const result: Dataset[] = [];
+
+    for (let i = items.length - 1; i >= 0; i -= 1) {
+        const item = items[i];
+        if (!item?.fileId || seen.has(item.fileId)) continue;
+        seen.add(item.fileId);
+        result.unshift(item);
+    }
+
+    return result;
+}
+
+function loadStoredDatasets(): Dataset[] {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem(DATASETS_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as Dataset[];
+        return Array.isArray(parsed) ? dedupeDatasets(parsed.filter(item => item?.fileId && item?.name && item?.type)) : [];
+    } catch {
+        return [];
+    }
+}
+
+function loadStoredActiveDataset(): Dataset | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(ACTIVE_DATASET_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Dataset;
+        if (!parsed?.fileId || !parsed?.name || !parsed?.type) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
 function loadStoredChat(fileId: string | null): { messages: Message[]; datasets: Dataset[] } | null {
     if (!fileId || typeof window === 'undefined') return null;
     try {
@@ -433,11 +538,7 @@ function loadStoredChat(fileId: string | null): { messages: Message[]; datasets:
             localStorage.removeItem(`iv_chat_${fileId}`);
             return null;
         }
-        // Do not replay auto-generated CSV preview cards when reopening recent files.
-        const sanitizedMessages = (parsed.messages ?? []).filter(
-            m => !(m.isAutoPreview && m.previewData && !m.content?.trim())
-        );
-        return { messages: sanitizedMessages, datasets: parsed.datasets };
+        return { messages: parsed.messages ?? [], datasets: parsed.datasets ?? [] };
     } catch { return null; }
 }
 
@@ -751,6 +852,7 @@ function ChatContent() {
     const [activeFileType, setActiveFileType] = useState<'csv' | 'pdf'>(initialType as 'csv' | 'pdf');
     const [isAddingDataset, setIsAddingDataset] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const importChatInputRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // PDF blob URLs stored per fileId (only available when uploaded directly in this session)
@@ -775,15 +877,86 @@ function ChatContent() {
         initialType === 'pdf' ? FALLBACK_PDF : FALLBACK_CSV
     );
     const [loadingSuggestions, setLoadingSuggestions] = useState(!!initialFileId);
+    const [initialStateHydrated, setInitialStateHydrated] = useState(false);
+    const [authReady, setAuthReady] = useState(false);
+    const [userLabel, setUserLabel] = useState<string | null>(null);
+    const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
-    // Hydrate stored chat client-side to avoid SSR/client markup mismatch.
     useEffect(() => {
-        if (!initialFileId) return;
-        const stored = loadStoredChat(initialFileId);
-        if (!stored) return;
-        if (stored.datasets?.length) setDatasets(stored.datasets);
-        if (stored.messages?.length) setMessages(stored.messages);
-    }, [initialFileId]);
+        const supabase = getSupabase();
+        let mounted = true;
+
+        const handlePointerDown = (event: MouseEvent) => {
+            if (!accountMenuRef.current?.contains(event.target as Node)) {
+                setAccountMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+
+        supabase.auth.getSession().then(({ data }) => {
+            if (!mounted) return;
+            if (!data.session) {
+                router.replace('/');
+                return;
+            }
+            setUserLabel((data.session.user.user_metadata?.display_name as string | undefined) || data.session.user.email || null);
+            setAuthReady(true);
+        });
+
+        const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!session) {
+                router.replace('/');
+                return;
+            }
+            setUserLabel((session.user.user_metadata?.display_name as string | undefined) || session.user.email || null);
+            setAuthReady(true);
+        });
+
+        return () => {
+            mounted = false;
+            document.removeEventListener('mousedown', handlePointerDown);
+            subscription.subscription.unsubscribe();
+        };
+    }, [router]);
+
+    // Hydrate dataset list and active chat client-side so reload restores all open files consistently.
+    useEffect(() => {
+        const urlDataset = initialFileId
+            ? { fileId: initialFileId, name: decodeURIComponent(initialName), type: initialType as 'csv' | 'pdf' }
+            : null;
+        const storedChat = loadStoredChat(initialFileId);
+        const baseDatasets = dedupeDatasets([
+            ...loadStoredDatasets(),
+            ...(storedChat?.datasets ?? []),
+        ]);
+        const mergedDatasets = urlDataset && !baseDatasets.some(dataset => dataset.fileId === urlDataset.fileId)
+            ? [...baseDatasets, urlDataset]
+            : baseDatasets;
+
+        setDatasets(mergedDatasets);
+
+        const storedActiveDataset = loadStoredActiveDataset();
+        const resolvedActiveDataset = (initialFileId
+            ? mergedDatasets.find(dataset => dataset.fileId === initialFileId)
+            : null)
+            ?? (storedActiveDataset
+                ? mergedDatasets.find(dataset => dataset.fileId === storedActiveDataset.fileId)
+                : null)
+            ?? mergedDatasets[mergedDatasets.length - 1]
+            ?? null;
+
+        setActiveFileId(resolvedActiveDataset?.fileId ?? null);
+        setActiveFileType(resolvedActiveDataset?.type ?? 'csv');
+
+        const resolvedStoredChat = loadStoredChat(resolvedActiveDataset?.fileId ?? null);
+        setMessages(resolvedStoredChat?.messages?.length
+            ? resolvedStoredChat.messages
+            : defaultMessages(resolvedActiveDataset?.type ?? (initialType as 'csv' | 'pdf'))
+        );
+        setInitialStateHydrated(true);
+    }, [initialFileId, initialName, initialType]);
 
     // Save recent file on mount for URL-loaded files
     useEffect(() => {
@@ -884,11 +1057,22 @@ function ChatContent() {
         // CSV preview is manual only; do not auto-show.
     }, [activeFileId, activeFileType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Upload-page entry: inject one auto preview message for fresh CSV upload.
+    // Initial CSV entry: inject one auto preview message for fresh uploads and recent CSV opens
+    // when there isn't already a saved conversation for that file.
     useEffect(() => {
-        if (!isFreshOpen || initialAutoPreviewDoneRef.current) return;
+        if (!initialStateHydrated || initialAutoPreviewDoneRef.current) return;
         if (!initialFileId || initialType !== 'csv') return;
         if (activeFileId !== initialFileId || activeFileType !== 'csv') return;
+
+        const storedChatForInitialFile = loadStoredChat(initialFileId);
+        const hasSavedConversation = !!storedChatForInitialFile?.messages?.some(message =>
+            message.role === 'user'
+            || !!message.previewData
+            || (message.role === 'assistant' && message.content.trim() !== defaultAssistantGreeting('csv'))
+        );
+
+        if (hasSavedConversation && !isFreshOpen) return;
+
         initialAutoPreviewDoneRef.current = true;
         const ds = datasets.find(d => d.fileId === activeFileId);
         void fetchAndShowPreview(activeFileId, ds?.name ?? decodeURIComponent(initialName), {
@@ -896,7 +1080,7 @@ function ChatContent() {
             appendToChat: true,
             isAutoPreview: true,
         });
-    }, [isFreshOpen, initialFileId, initialType, initialName, activeFileId, activeFileType, datasets]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [initialStateHydrated, isFreshOpen, initialFileId, initialType, initialName, activeFileId, activeFileType, datasets]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // If the user has opened the CSV panel, keep it synced to the active CSV file.
     useEffect(() => {
@@ -919,13 +1103,57 @@ function ChatContent() {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isTyping]);
 
+    // Persist shared dataset state so reload restores all open file tabs, not just the current file.
+    useEffect(() => {
+        try {
+            if (datasets.length > 0) {
+                localStorage.setItem(DATASETS_STORAGE_KEY, JSON.stringify(dedupeDatasets(datasets)));
+            } else {
+                localStorage.removeItem(DATASETS_STORAGE_KEY);
+            }
+        } catch { /* ignore */ }
+    }, [datasets]);
+
+    useEffect(() => {
+        try {
+            const activeDatasetToStore = datasets.find(dataset => dataset.fileId === activeFileId) ?? null;
+            if (activeDatasetToStore) {
+                localStorage.setItem(ACTIVE_DATASET_STORAGE_KEY, JSON.stringify(activeDatasetToStore));
+            } else {
+                localStorage.removeItem(ACTIVE_DATASET_STORAGE_KEY);
+            }
+        } catch { /* ignore */ }
+    }, [activeFileId, datasets]);
+
+    useEffect(() => {
+        const activeDatasetForUrl = datasets.find(dataset => dataset.fileId === activeFileId) ?? null;
+        const params = new URLSearchParams(searchParams.toString());
+
+        if (activeDatasetForUrl) {
+            params.set('fileId', activeDatasetForUrl.fileId);
+            params.set('type', activeDatasetForUrl.type);
+            params.set('name', activeDatasetForUrl.name);
+        } else {
+            params.delete('fileId');
+            params.delete('type');
+            params.delete('name');
+        }
+
+        params.delete('fresh');
+        const nextQuery = params.toString();
+        const currentQuery = searchParams.toString();
+        if (nextQuery === currentQuery) return;
+
+        router.replace(nextQuery ? `/chat?${nextQuery}` : '/chat', { scroll: false });
+    }, [activeFileId, datasets, router, searchParams]);
+
     // Persist chat to localStorage
     useEffect(() => {
         if (!activeFileId || messages.length <= 1) return;
         try {
             localStorage.setItem(CHAT_STORAGE_KEY(activeFileId), JSON.stringify({
                 messages,
-                datasets,
+                datasets: dedupeDatasets(datasets),
                 savedAt: Date.now(),
             }));
         } catch { /* storage full */ }
@@ -994,16 +1222,10 @@ function ChatContent() {
                 const uploadedFileId = session.fileId;
                 const baseName = file.name.replace(/\.(csv|pdf)$/i, '');
                 const newDataset: Dataset = { fileId: uploadedFileId, name: baseName, type: fileType };
-                setDatasets(prev => [...prev, newDataset]);
+                setDatasets(prev => dedupeDatasets([...prev, newDataset]));
                 setActiveFileId(uploadedFileId);
                 setActiveFileType(fileType);
-                setMessages([
-                    ...defaultMessages(fileType),
-                    {
-                        role: 'assistant',
-                        content: `${fileType === 'pdf' ? 'Document' : 'Dataset'} "${baseName}" loaded. You can now ask questions about it.`
-                    }
-                ]);
+                setMessages(defaultMessages(fileType));
 
                 // Save to recent files
                 saveRecentFile(baseName, uploadedFileId, fileType);
@@ -1016,7 +1238,9 @@ function ChatContent() {
                 }
 
                 // In-chat CSV upload: inject one auto preview message, but keep panel closed.
+                // Mark it handled so the initial-entry effect does not append a duplicate card.
                 if (fileType === 'csv') {
+                    initialAutoPreviewDoneRef.current = true;
                     void fetchAndShowPreview(uploadedFileId, baseName, {
                         force: true,
                         appendToChat: true,
@@ -1024,8 +1248,14 @@ function ChatContent() {
                     });
                 }
             }
-        } catch {
-            setMessages(prev => [...prev, { role: 'assistant', content: 'Upload failed. Please try again.' }]);
+        } catch (error: unknown) {
+            console.error('Chat upload error:', error);
+            const message = normalizeUploadError(error);
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: friendlyError(message),
+                isError: true,
+            }]);
         } finally {
             setIsAddingDataset(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1210,10 +1440,35 @@ function ChatContent() {
         const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
+        const fileBase = toSafeExportBase(activeDatasetName || activeDataset?.name || activeFileId || 'chat');
         a.href = url;
-        a.download = `chat-${Date.now()}.md`;
+        a.download = `${fileBase}-chat.md`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+
+
+    const handleImportChat = () => {
+        importChatInputRef.current?.click();
+    };
+
+    const handleImportChatFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const markdown = await file.text();
+            const parsed = parseExportedChatMarkdown(markdown);
+            if (!parsed.length) {
+                setMessages(prev => [...prev, { role: 'assistant', content: 'Could not import that chat file. Please choose an InsightVault chat markdown export.', isError: true }]);
+                return;
+            }
+            setMessages(parsed);
+        } catch {
+            setMessages(prev => [...prev, { role: 'assistant', content: 'Import failed. Please try another chat export file.', isError: true }]);
+        } finally {
+            if (event.target) event.target.value = '';
+        }
     };
 
     const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1238,6 +1493,38 @@ function ChatContent() {
     const activeDataset = datasets.find(d => d.fileId === activeFileId);
     const activeDatasetName = activeDataset?.name;
     const isEmptyChat = messages.length === 1 && messages[0].role === 'assistant';
+    const handleSignOut = async () => {
+        setAccountMenuOpen(false);
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.removeItem(DATASETS_STORAGE_KEY);
+                localStorage.removeItem(ACTIVE_DATASET_STORAGE_KEY);
+                localStorage.removeItem('iv_recent_files');
+                Object.keys(localStorage)
+                    .filter(key => key.startsWith('iv_chat_'))
+                    .forEach(key => localStorage.removeItem(key));
+                Object.keys(sessionStorage)
+                    .filter(key => key.startsWith('iv_pdf_blob_'))
+                    .forEach(key => sessionStorage.removeItem(key));
+            } catch {
+                // ignore local cleanup failures during sign-out
+            }
+        }
+        await getSupabase().auth.signOut();
+        router.replace('/');
+    };
+
+    if (!authReady) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-page)' }}>
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-dim)' }}>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading workspace...
+                </div>
+            </div>
+        );
+    }
+
     const canSend = !!activeFileId && !isTyping && !!input.trim();
     const activePdfUrl = activeFileId ? (pdfBlobUrls.current.get(activeFileId) ?? null) : null;
 
@@ -1345,26 +1632,61 @@ function ChatContent() {
                         )}
 
                         {/* Clear + Export actions */}
-                        {!isEmptyChat && (
-                            <div className="flex items-center gap-1 ml-0.5">
-                                {[
-                                    { icon: Download, title: 'Export chat', onClick: handleExport },
-                                    { icon: Trash2, title: 'Clear chat', onClick: handleClearChat },
-                                ].map(({ icon: Icon, title, onClick }) => (
+                        <div className="flex items-center gap-1 ml-0.5">
+                            <input
+                                ref={importChatInputRef}
+                                type="file"
+                                accept=".md,text/markdown,text/plain"
+                                className="hidden"
+                                onChange={handleImportChatFile}
+                            />
+                            {[
+                                { icon: FileText, title: 'Import chat', onClick: handleImportChat, hidden: false },
+                                { icon: Download, title: 'Export chat', onClick: handleExport, hidden: isEmptyChat },
+                                { icon: Trash2, title: 'Clear chat', onClick: handleClearChat, hidden: isEmptyChat },
+                            ].filter(action => !action.hidden).map(({ icon: Icon, title, onClick }) => {
+                                const isImport = title === 'Import chat';
+                                return (
                                     <button
                                         key={title}
                                         onClick={onClick}
                                         title={title}
-                                        className="w-6 h-6 rounded-md flex items-center justify-center transition-all duration-150"
-                                        style={{ color: 'var(--text-faint)', background: 'transparent' }}
-                                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-dim)'; (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-muted)'; }}
-                                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)'; (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                                        className={isImport ? "h-7 rounded-lg flex items-center gap-1.5 px-2.5 transition-all duration-150 text-[11px] font-medium" : "w-6 h-6 rounded-md flex items-center justify-center transition-all duration-150"}
+                                        style={isImport
+                                            ? {
+                                                color: 'var(--text-dim)',
+                                                background: 'var(--bg-muted)',
+                                                border: '1px solid var(--border-strong)',
+                                            }
+                                            : { color: 'var(--text-faint)', background: 'transparent' }}
+                                        onMouseEnter={e => {
+                                            if (isImport) {
+                                                (e.currentTarget as HTMLButtonElement).style.color = '#60a5fa';
+                                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(59,130,246,0.4)';
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(59,130,246,0.08)';
+                                            } else {
+                                                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-dim)';
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-muted)';
+                                            }
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (isImport) {
+                                                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-dim)';
+                                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-strong)';
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-muted)';
+                                            } else {
+                                                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)';
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                            }
+                                        }}
                                     >
-                                        <Icon className="w-3 h-3" />
+                                        <Icon className={isImport ? "w-3.5 h-3.5" : "w-3 h-3"} />
+                                        {isImport && <span className="hidden sm:inline">Import chat</span>}
                                     </button>
-                                ))}
-                            </div>
-                        )}
+                                );
+                            })}
+
+                        </div>
 
                         {/* Pinned insights toggle */}
                         {messages.some(m => m.pinned) && (
@@ -1383,7 +1705,8 @@ function ChatContent() {
                     </div>
 
                     {/* Right: chips + add file + warning - scrollable on mobile */}
-                    <div className="flex items-center gap-2 flex-1 overflow-x-auto min-w-0 justify-end" style={{ scrollbarWidth: 'none' }}>
+                    <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto justify-end" style={{ scrollbarWidth: 'none' }}>
 
                         {/* Dataset chips */}
                         {datasets.map(ds => {
@@ -1435,13 +1758,28 @@ function ChatContent() {
                                     >
                                         {ds.type}
                                     </span>
-                                    <span
+                                    <button
+                                        type="button"
                                         onClick={e => { e.stopPropagation(); handleRemoveClick(ds.fileId, ds.name); }}
-                                        className="rounded p-0.5 hover:opacity-100 transition-opacity"
-                                        style={{ color: isActive ? 'rgba(147,197,253,0.7)' : 'var(--text-faint)', opacity: 0.6 }}
+                                        className="rounded-full p-[3px] transition-all duration-150"
+                                        style={{
+                                            color: isActive ? '#60a5fa' : 'var(--text-dim)',
+                                            opacity: 1,
+                                            background: 'transparent',
+                                            border: '1px solid transparent',
+                                        }}
+                                        onMouseEnter={e => {
+                                            (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-muted)';
+                                            (e.currentTarget as HTMLButtonElement).style.color = isActive ? '#93c5fd' : 'var(--text-primary)';
+                                        }}
+                                        onMouseLeave={e => {
+                                            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                            (e.currentTarget as HTMLButtonElement).style.color = isActive ? '#60a5fa' : 'var(--text-dim)';
+                                        }}
+                                        aria-label={`Remove ${ds.name}`}
                                     >
                                         <X className="w-3 h-3" />
-                                    </span>
+                                    </button>
                                 </button>
                             );
                         })}
@@ -1476,6 +1814,85 @@ function ChatContent() {
                                 <span className="hidden sm:inline">No file loaded</span>
                             </div>
                         )}
+
+                        </div>
+
+                        <div ref={accountMenuRef} className="relative shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setAccountMenuOpen(open => !open)}
+                                className="relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-150"
+                                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.28) 0%, rgba(96,165,250,0.42) 100%)', border: '1px solid rgba(59,130,246,0.5)', boxShadow: accountMenuOpen ? '0 12px 28px rgba(37,99,235,0.24)' : '0 4px 14px rgba(37,99,235,0.08)' }}
+                                title={userLabel ?? 'Authenticated user'}
+                            >
+                                <span className="text-[13px] font-semibold tracking-[0.02em]" style={{ color: '#ffffff', textShadow: '0 1px 8px rgba(30,41,59,0.16)' }}>
+                                    {getInitials(userLabel)}
+                                </span>
+                                <div
+                                    className="absolute -right-0.5 -bottom-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+                                    style={{ background: 'var(--bg-card)', border: '1px solid rgba(59,130,246,0.34)', boxShadow: '0 2px 8px rgba(15,23,42,0.12)' }}
+                                >
+                                    <BadgeCheck className="w-2 h-2" style={{ color: '#60a5fa' }} />
+                                </div>
+                            </button>
+
+                            {accountMenuOpen && (
+                                <div
+                                    className="absolute right-0 top-[calc(100%+8px)] z-20 w-44 overflow-hidden rounded-2xl animate-fade-in"
+                                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-strong)', boxShadow: '0 22px 50px rgba(15,23,42,0.16), 0 0 0 1px rgba(59,130,246,0.06) inset' }}
+                                >
+                                    <div className="px-2.5 py-2.5" style={{ background: 'linear-gradient(180deg, rgba(59,130,246,0.08) 0%, transparent 100%)' }}>
+                                        <div className="flex items-center gap-2.5">
+                                            <div
+                                                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                                                style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.28) 0%, rgba(96,165,250,0.42) 100%)', border: '1px solid rgba(59,130,246,0.5)', boxShadow: '0 4px 14px rgba(37,99,235,0.08)' }}
+                                            >
+                                                <span className="text-[13px] font-semibold tracking-[0.02em]" style={{ color: '#ffffff', textShadow: '0 1px 8px rgba(30,41,59,0.16)' }}>
+                                                    {getInitials(userLabel)}
+                                                </span>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-[8px] uppercase tracking-[0.16em]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', opacity: 0.95 }}>
+                                                    Signed In
+                                                </div>
+                                                <div className="mt-1 text-[15px] truncate font-semibold leading-none" style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                                                    {userLabel ?? 'Authenticated user'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="px-2 pb-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleSignOut}
+                                            className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-all duration-150"
+                                            style={{ color: '#fca5a5', background: 'transparent' }}
+                                            onMouseEnter={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)';
+                                                (e.currentTarget as HTMLButtonElement).style.color = '#f87171';
+                                            }}
+                                            onMouseLeave={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                                (e.currentTarget as HTMLButtonElement).style.color = '#fca5a5';
+                                            }}
+                                        >
+                                            <div
+                                                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                                                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.16)' }}
+                                            >
+                                                <LogOut className="w-3 h-3" />
+                                            </div>
+                                            <div className="flex-1 text-left">
+                                                <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>Sign out</div>
+                                                <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                                                    End this session
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 

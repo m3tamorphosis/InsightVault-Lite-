@@ -18,6 +18,13 @@ function isResumeLikePrompt(message: string, retrieval: RetrievalResult): boolea
   return retrieval.fileType === 'pdf' && /cv|resume|curriculum vitae|hiring manager|role fit|qualifications/i.test(message);
 }
 
+function getResumeOutputMode(message: string): 'summary' | 'analysis' | 'strict' | 'delivery' {
+  if (isStrictEvidenceRequest(message)) return 'strict';
+  if (/send|share|slack|email|mail/i.test(message)) return 'delivery';
+  if (/strengths|standout projects|role fit|fit for|hiring manager|qualifications/i.test(message)) return 'analysis';
+  return 'summary';
+}
+
 function buildSystemPrompt(
   classification: QueryClassification,
   processed: ProcessedContext,
@@ -26,6 +33,7 @@ function buildSystemPrompt(
 ): string {
   const strictEvidence = isStrictEvidenceRequest(message);
   const resumeLike = isResumeLikePrompt(message, retrieval);
+  const resumeMode = resumeLike ? getResumeOutputMode(message) : null;
 
   const baseRules = [
     `You are InsightVault Lite's production AI analyst.`,
@@ -38,12 +46,27 @@ function buildSystemPrompt(
     `Use concise markdown with short sections where helpful.`,
   ];
 
+  const csvRules = retrieval.fileType === 'csv'
+    ? [
+        'For CSV answers, calculate directly from the retrieved rows when the question asks for totals, averages, rankings, sums, or date comparisons.',
+        'Do not use LaTeX, math delimiters, escaped brackets, or equation notation such as \[ ... \], $$...$$, or \frac. Write calculations in plain text.',
+        'When showing a calculation, use a simple format like: Average price = (55000 + 20000 + 2500 + 12000) / 4 = 22875.',
+        'Avoid hedging with phrases like "the retrieved context does not provide sufficient data" when the rows shown are enough to compute the answer.',
+      ]
+    : [];
+
   const pdfRules = retrieval.fileType === 'pdf'
     ? [
         'For PDF answers, cite concrete evidence from the retrieved excerpts such as project names, roles, tools, technologies, and experience details.',
         'Do not repeat the same point across multiple sections unless it adds new evidence or a different interpretation.',
         resumeLike ? 'For CV or resume-style documents, prefer recruiter-ready language over generic praise.' : null,
+        resumeLike ? 'Anchor each section to explicit evidence like named projects, work experience, technologies, education, and certifications.' : null,
         resumeLike ? 'Differentiate clearly between Summary, Strengths, Standout Projects, and Role Fit instead of restating the same content in each section.' : null,
+        resumeLike ? 'Avoid broad statements like "strong candidate" unless they are immediately justified with document-backed evidence.' : null,
+        resumeLike && resumeMode === 'summary' ? 'For resume summaries, use these exact sections when supported: Summary, Strongest Qualifications, Most Important Takeaway.' : null,
+        resumeLike && resumeMode === 'analysis' ? 'For resume analysis, use these exact sections when supported: Strengths, Standout Projects, Role Fit.' : null,
+        resumeLike && resumeMode === 'strict' ? 'For strict-evidence resume requests, use these exact sections: Supported Qualifications, Supported Projects, Missing or Unsupported Information.' : null,
+        resumeLike && resumeMode === 'delivery' ? 'For resume delivery requests, write a polished hiring-manager-ready summary grounded in the document.' : null,
         strictEvidence ? 'When the user asks for only supported information, do not infer achievements, impact, seniority, or team dynamics unless the document explicitly states them.' : null,
         strictEvidence ? 'If an important detail is missing, say "Not stated in the document" or list it under "Missing or Unsupported Information" in a tight, factual way.' : null,
       ].filter(Boolean)
@@ -69,10 +92,12 @@ function buildSystemPrompt(
             ]
           : [
               'Highlight findings, trends, risks, and practical implications.',
+              resumeLike ? 'For resume-style analysis, focus on evidence-backed qualifications, project relevance, and realistic role alignment.' : null,
+              resumeLike ? 'Do not restate the same project or skill in multiple sections unless the new section adds different evidence.' : null,
               'Do not add a Recommended Follow-Up Questions section unless the user explicitly asks for follow-up questions.',
-            ];
+            ].filter(Boolean);
 
-  return [...baseRules, ...pdfRules, ...intentRules].join('\n');
+  return [...baseRules, ...csvRules, ...pdfRules, ...intentRules].join('\n');
 }
 
 
@@ -87,9 +112,19 @@ function normalizeBlock(block: string): string {
     .trim();
 }
 
+function normalizeMathFormatting(text: string): string {
+  return text
+    .replace(/\\\[|\\\]/g, '')
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1) / ($2)')
+    .replace(/\\text\{([^{}]+)\}/g, '$1')
+    .replace(/\\,/g, ',')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 export function normalizeGeneratedResponse(text: string): string {
   const withoutFollowUps = text.replace(/\n*#{0,6}\s*Recommended Follow-?up Questions[\s\S]*$/i, '').trim();
-  const normalizedNewlines = withoutFollowUps.replace(/\r\n/g, '\n').trim();
+  const normalizedNewlines = normalizeMathFormatting(withoutFollowUps).replace(/\r\n/g, '\n').trim();
   if (!normalizedNewlines) return '';
 
   const blocks = normalizedNewlines
@@ -120,7 +155,13 @@ function buildUserPrompt(message: string, classification: QueryClassification, p
     const extraDirectives = retrieval.fileType === 'pdf'
       ? [
           isResumeLikePrompt(message, retrieval)
-            ? 'Focus on evidence from the CV itself, such as named projects, technologies, roles, and work experience.'
+            ? 'Focus on evidence from the CV itself, such as named projects, technologies, roles, work experience, education, and certifications.'
+            : null,
+          isResumeLikePrompt(message, retrieval)
+            ? 'Prefer short, concrete bullets over long generic paragraphs when listing strengths or qualifications.'
+            : null,
+          isResumeLikePrompt(message, retrieval)
+            ? 'If you mention role fit, tie it directly to specific evidence from the document instead of generic praise.'
             : null,
           isStrictEvidenceRequest(message)
             ? 'Do not infer anything beyond what is explicitly supported by the retrieved text.'

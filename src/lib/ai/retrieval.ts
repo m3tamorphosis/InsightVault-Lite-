@@ -4,6 +4,7 @@ import { searchSimilarChunks } from '@/lib/vector-store';
 import type { QueryClassification, RetrievedDocument, RetrievalFilters, RetrievalResult } from './types';
 
 const METRIC_FIELD_PRIORITY = ['total', 'amount', 'sales', 'revenue', 'value', 'price', 'unit_price'];
+const AGGREGATION_QUERY_REGEX = /\b(rank|ranking|sum|total sales|total by|breakdown|average|avg|mean|per\s+region|by\s+region|per\s+category|by\s+category|group\s+by|across\s+different|for each|each product|order dates?|date comparison|dates?\b|highest total sales|lowest total sales|outlier|trend)\b/i;
 
 function filterSummary(filters?: RetrievalFilters): string {
   if (!filters) return 'none';
@@ -63,6 +64,31 @@ function buildRowContent(headers: string[], row: Record<string, string>): string
   return headers.map(header => `${header}: ${row[header] ?? ''}`).join(', ');
 }
 
+function isAggregationCsvQuery(query: string): boolean {
+  return AGGREGATION_QUERY_REGEX.test(query);
+}
+
+function buildAggregateDocuments(rows: Record<string, string>[]): RetrievedDocument[] {
+  if (rows.length === 0) return [];
+
+  const headers = Object.keys(rows[0]);
+  return rows.slice(0, 50).map((row, index) => ({
+    id: `csv-aggregate-${index}`,
+    content: buildRowContent(headers, row),
+    score: 1,
+    source: 'csv_rows',
+    category: 'tabular',
+    fileType: 'csv',
+    metadata: {
+      rowIndex: index,
+      headers,
+      row,
+      aggregateScope: 'full_dataset',
+      totalRowsInDataset: rows.length,
+    },
+  }));
+}
+
 function buildComparisonDocuments(rows: Record<string, string>[]): RetrievedDocument[] {
   if (rows.length === 0) return [];
 
@@ -107,6 +133,10 @@ function buildCsvDocuments(query: string, rows: Record<string, string>[], classi
   if (classification.intent === 'comparison' || classification.retrievalMode === 'comparative') {
     const comparisonDocs = buildComparisonDocuments(rows);
     if (comparisonDocs.length > 0) return comparisonDocs;
+  }
+
+  if (classification.intent === 'analysis' && isAggregationCsvQuery(query)) {
+    return buildAggregateDocuments(rows);
   }
 
   const scored = rows
@@ -156,6 +186,8 @@ export async function retrieveDocuments(params: {
 
     if (rows.length === 0) {
       warnings.push('The CSV file has no stored rows.');
+    } else if (documents.some(doc => doc.metadata?.aggregateScope === 'full_dataset')) {
+      warnings.push('The system provided a broad dataset slice for direct aggregation and ranking over the CSV rows.');
     } else if (documents.length > 0 && documents.every(doc => doc.score === 0)) {
       warnings.push('No strong row-level matches were found, so the system used representative rows instead.');
     }

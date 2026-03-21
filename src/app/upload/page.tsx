@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight } from 'lucide-react';
+import { Upload, FileText, FileType, CheckCircle, AlertCircle, Loader2, BarChart2, FileSearch, Zap, X, ArrowRight, LogOut, BadgeCheck } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 
 const ACCEPTED = '.csv,.pdf';
@@ -79,22 +79,72 @@ async function parseUploadSessionResponse(response: Response): Promise<UploadSes
     return { error: parsed.error || `Upload session failed (HTTP ${response.status})` };
 }
 
+
+function getInitials(label: string | null): string {
+    if (!label) return 'U';
+    const cleaned = label.includes('@') ? label.split('@')[0] : label;
+    const parts = cleaned.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'U';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 export default function UploadPage() {
     const router = useRouter();
     const [file, setFile] = useState<File | null>(null);
     const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+    const [authReady, setAuthReady] = useState(false);
+    const [userLabel, setUserLabel] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState('');
     const [sizeWarning, setSizeWarning] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [recentFiles, setRecentFiles] = useState<Array<{name: string; fileId: string; type: string; timestamp: number}>>([]);
     const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+    const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
+        const supabase = getSupabase();
+        let mounted = true;
+
+        const handlePointerDown = (event: MouseEvent) => {
+            if (!accountMenuRef.current?.contains(event.target as Node)) {
+                setAccountMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDown);
+
+        supabase.auth.getSession().then(({ data }) => {
+            if (!mounted) return;
+            if (!data.session) {
+                router.replace('/');
+                return;
+            }
+            setUserLabel((data.session.user.user_metadata?.display_name as string | undefined) || data.session.user.email || null);
+            setAuthReady(true);
+        });
+
+        const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!session) {
+                router.replace('/');
+                return;
+            }
+            setUserLabel((session.user.user_metadata?.display_name as string | undefined) || session.user.email || null);
+            setAuthReady(true);
+        });
+
         try {
             const raw = localStorage.getItem('iv_recent_files');
             if (raw) setRecentFiles(JSON.parse(raw));
         } catch { /* ignore */ }
-    }, []);
+
+        return () => {
+            mounted = false;
+            document.removeEventListener('mousedown', handlePointerDown);
+            subscription.subscription.unsubscribe();
+        };
+    }, [router]);
 
     const removeRecentFile = (fileId: string) => {
         const updated = recentFiles.filter(f => f.fileId !== fileId);
@@ -200,6 +250,38 @@ export default function UploadPage() {
         }
     };
 
+    const handleSignOut = async () => {
+        setAccountMenuOpen(false);
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.removeItem('iv_chat_datasets');
+                localStorage.removeItem('iv_chat_active_dataset');
+                localStorage.removeItem('iv_recent_files');
+                Object.keys(localStorage)
+                    .filter(key => key.startsWith('iv_chat_'))
+                    .forEach(key => localStorage.removeItem(key));
+                Object.keys(sessionStorage)
+                    .filter(key => key.startsWith('iv_pdf_blob_'))
+                    .forEach(key => sessionStorage.removeItem(key));
+            } catch {
+                // ignore local cleanup failures during sign-out
+            }
+        }
+        await getSupabase().auth.signOut();
+        router.replace('/');
+    };
+
+    if (!authReady) {
+        return (
+            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-page)' }}>
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-dim)' }}>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading workspace...
+                </div>
+            </div>
+        );
+    }
+
     const isReady = !!file && status !== 'uploading';
     const fileKind = file ? getFileKind(file) : null;
     const isPDF = fileKind === 'pdf';
@@ -223,7 +305,6 @@ export default function UploadPage() {
             <div className="absolute inset-0 pointer-events-none" style={{
                 background: 'radial-gradient(ellipse 30% 20% at 15% 20%, rgba(59,130,246,0.04) 0%, transparent 70%)',
             }} />
-
             {/* Card */}
             <div
                 className="relative z-10 w-full max-w-[440px] mx-4 animate-float-up"
@@ -243,9 +324,10 @@ export default function UploadPage() {
 
                     {/* Header */}
                     <div className="mb-7">
-                        <div className="flex items-center gap-2.5 mb-5">
+                        <div className="flex items-center justify-between gap-3 mb-5">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div
-                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                                 style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)' }}
                             >
                                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -274,6 +356,84 @@ export default function UploadPage() {
                             >
                                 InsightVault
                             </span>
+                            </div>
+
+                            <div ref={accountMenuRef} className="relative shrink-0 self-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setAccountMenuOpen(open => !open)}
+                                    className="relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-150"
+                                    style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.28) 0%, rgba(96,165,250,0.42) 100%)', border: '1px solid rgba(59,130,246,0.5)', boxShadow: accountMenuOpen ? '0 12px 28px rgba(37,99,235,0.24)' : '0 4px 14px rgba(37,99,235,0.08)' }}
+                                    title={userLabel ?? 'Authenticated user'}
+                                >
+                                    <span className="text-[13px] font-semibold tracking-[0.02em]" style={{ color: '#ffffff', textShadow: '0 1px 8px rgba(30,41,59,0.16)' }}>
+                                        {getInitials(userLabel)}
+                                    </span>
+                                    <div
+                                        className="absolute -right-0.5 -bottom-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+                                        style={{ background: 'var(--bg-card)', border: '1px solid rgba(59,130,246,0.34)', boxShadow: '0 2px 8px rgba(15,23,42,0.12)' }}
+                                    >
+                                        <BadgeCheck className="w-2.5 h-2.5" style={{ color: '#60a5fa' }} />
+                                    </div>
+                                </button>
+
+                                {accountMenuOpen && (
+                                    <div
+                                        className="absolute right-0 top-[calc(100%+8px)] z-20 w-44 overflow-hidden rounded-2xl animate-fade-in"
+                                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-strong)', boxShadow: '0 22px 50px rgba(15,23,42,0.16), 0 0 0 1px rgba(59,130,246,0.06) inset' }}
+                                    >
+                                        <div className="px-2.5 py-2.5" style={{ background: 'linear-gradient(180deg, rgba(59,130,246,0.08) 0%, transparent 100%)' }}>
+                                            <div className="flex items-center gap-2.5">
+                                                <div
+                                                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                                                    style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.28) 0%, rgba(96,165,250,0.42) 100%)', border: '1px solid rgba(59,130,246,0.5)', boxShadow: '0 4px 14px rgba(37,99,235,0.08)' }}
+                                                >
+                                                    <span className="text-[13px] font-semibold tracking-[0.02em]" style={{ color: '#ffffff', textShadow: '0 1px 8px rgba(30,41,59,0.16)' }}>
+                                                        {getInitials(userLabel)}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="text-[8px] uppercase tracking-[0.16em]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', opacity: 0.95 }}>
+                                                        Signed In
+                                                    </div>
+                                                    <div className="mt-1 text-[15px] truncate font-semibold leading-none" style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                                                        {userLabel ?? 'Authenticated user'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="px-2 pb-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleSignOut}
+                                                className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-all duration-150"
+                                                style={{ color: '#fca5a5', background: 'transparent' }}
+                                                onMouseEnter={e => {
+                                                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)';
+                                                    (e.currentTarget as HTMLButtonElement).style.color = '#f87171';
+                                                }}
+                                                onMouseLeave={e => {
+                                                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                                    (e.currentTarget as HTMLButtonElement).style.color = '#fca5a5';
+                                                }}
+                                            >
+                                                <div
+                                                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.16)' }}
+                                                >
+                                                    <LogOut className="w-3 h-3" />
+                                                </div>
+                                                <div className="flex-1 text-left">
+                                                    <div className="text-[13px]" style={{ color: 'var(--text-primary)' }}>Sign out</div>
+                                                    <div className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                                                        End this session
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <h1 className="text-[27px] font-semibold leading-tight mb-2" style={{ letterSpacing: '-0.025em' }}>

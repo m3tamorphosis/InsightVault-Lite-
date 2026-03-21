@@ -115,6 +115,30 @@ body {
   min-height: 100dvh;
 }
 
+
+input,
+textarea,
+select {
+  color: var(--text-secondary);
+  caret-color: var(--text-secondary);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-secondary);
+  caret-color: var(--text-secondary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-element) inset;
+  box-shadow: 0 0 0 1000px var(--bg-element) inset;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 4px;
@@ -187,6 +211,16 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes authPanelSlideInLeft {
+  from { opacity: 0; transform: translateX(-14px) translateY(4px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
+@keyframes authPanelSlideInRight {
+  from { opacity: 0; transform: translateX(14px) translateY(4px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+
 .animate-slide-up {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -201,11 +235,15 @@ body {
 
 /* Card hover lift */
 .card-hover {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.24s ease, background-color 0.24s ease;
 }
 .card-hover:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 14px 34px rgba(15,23,42,0.12), 0 4px 14px rgba(37,99,235,0.08);
+}
+[data-theme="light"] .card-hover:hover {
+  border-color: rgba(59,130,246,0.22);
+  background: rgba(255,255,255,0.99);
 }
 
 /* Blue glow utility */

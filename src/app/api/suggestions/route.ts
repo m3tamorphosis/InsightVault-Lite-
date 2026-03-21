@@ -17,12 +17,19 @@ const FALLBACK_PDF = [
   'Find any specific numbers or statistics',
 ];
 
+function normalizeSuggestion(text: string): string {
+  return text
+    .replace(/'([A-Za-z_][A-Za-z0-9_]*)'/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseSuggestions(text: string | null | undefined): string[] | null {
   if (!text) return null;
   try {
     const json = text.replace(/```json|```/g, '').trim();
     const arr = JSON.parse(json);
-    if (Array.isArray(arr) && arr.length > 0) return (arr as unknown[]).map(String).slice(0, 4);
+    if (Array.isArray(arr) && arr.length > 0) return (arr as unknown[]).map(value => normalizeSuggestion(String(value))).slice(0, 4);
   } catch { /* fall through */ }
   return null;
 }
@@ -86,7 +93,8 @@ ${schemaDesc}
 Generate exactly 4 specific, interesting questions the user might ask. Requirements:
 - Reference actual column names and example values from the schema
 - Cover different analysis types: one ranking question, one aggregation or average, one breakdown by category, and one trend or outlier question
-- Make each question feel natural and specific (not generic)
+- Make each question feel natural, specific, and professional
+- Do not wrap column names, field names, or example values in quotation marks
 ${exclude.length ? `- Do NOT repeat or rephrase any of these already-asked questions: ${exclude.map(q => `"${q}"`).join(', ')}` : ''}
 
 Return ONLY a JSON array of 4 strings. No markdown, no explanation.`,
@@ -114,7 +122,8 @@ ${sample || 'No content available.'}
 Generate exactly 4 specific questions a reader would naturally want to ask about this document. Requirements:
 - Make them specific to the actual content shown, not generic
 - Cover: what the document is about, a key claim or finding, a specific detail or number, and a broader takeaway or implication
-- Phrase them naturally as a curious reader would
+- Phrase them naturally and professionally
+- Do not wrap section names, field names, or example values in quotation marks
 ${exclude.length ? `- Do NOT repeat or rephrase any of these already-asked questions: ${exclude.map(q => `"${q}"`).join(', ')}` : ''}
 
 Return ONLY a JSON array of 4 strings. No markdown, no explanation.`,

@@ -1,0 +1,21 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="18" fill="#11131A"/>
+  <rect x="6.5" y="6.5" width="51" height="51" rx="15.5" stroke="rgba(96,165,250,0.32)"/>
+  <defs>
+    <linearGradient id="iv-g1" x1="0" y1="18" x2="0" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="iv-g2" x1="0" y1="12" x2="0" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="iv-g3" x1="0" y1="8" x2="0" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <rect x="17" y="31" width="8" height="16" rx="2.5" fill="url(#iv-g1)"/>
+  <rect x="28" y="22" width="8" height="25" rx="2.5" fill="url(#iv-g2)"/>
+  <rect x="39" y="15" width="8" height="32" rx="2.5" fill="url(#iv-g3)"/>
+</svg>
