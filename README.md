@@ -17,6 +17,8 @@ This project started as a basic RAG-style file chat app and was upgraded into a 
 - Paragraph-first PDF chunking for more grounded document retrieval.
 - CSV comparison retrieval that can pull highest-vs-lowest records for comparison prompts.
 - Streamed responses through `/api/query`.
+- Credentials auth with Supabase email/password and display-name metadata.
+- Chat import/export support for markdown conversation files.
 - Optional external delivery through Slack and email.
 
 ## End-to-End Flow
@@ -54,6 +56,13 @@ src/lib/ai/
   agent.ts
   types.ts
 ```
+
+## Frontend Experience
+- Sign in / sign up with Supabase credentials auth.
+- Upload page with recent files, protected access, and account dropdown.
+- Multi-file chat with CSV and PDF tabs.
+- Import/export chat as markdown.
+- Theme-aware UI for dark and light modes.
 
 ## Main API
 - `POST /api/query`
@@ -125,12 +134,15 @@ RESEND_FROM_EMAIL=reports@example.com
 
 ## Setup
 1. Run the SQL in `supabase_schema.sql`.
-2. Add your environment variables to `.env.local`.
-3. Install dependencies with `npm install`.
-4. Start the app with `npm run dev`.
+2. Enable Supabase Email auth in your project.
+3. Add your environment variables to `.env.local`.
+4. Install dependencies with `npm install`.
+5. Start the app with `npm run dev`.
 
 ## Notes
 - The chat UI uses `/api/query` as the main orchestration route.
+- Sign out clears InsightVault's local chat, dataset, and recent-file state to avoid cross-user leakage on shared browsers.
+- The auth page's `Remember email` option stores only the email address for convenience; it does not change Supabase session persistence.
 - Slack works as the primary external action flow when `SLACK_WEBHOOK_URL` is configured.
 - Resend email sending requires a valid verified sender domain.
 - PDF retrieval depends on the metadata columns and `match_chunks` RPC signature in `supabase_schema.sql`.
