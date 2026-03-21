@@ -142,7 +142,7 @@ RESEND_FROM_EMAIL=reports@example.com
 ## Notes
 - The chat UI uses `/api/query` as the main orchestration route.
 - Sign out clears InsightVault's local chat, dataset, and recent-file state to avoid cross-user leakage on shared browsers.
-- The auth page's `Remember email` option stores only the email address for convenience; it does not change Supabase session persistence.
+- The auth page supports browser-managed `Remember me` behavior through standard password-manager autofill. The app does not store raw passwords itself.
 - Slack works as the primary external action flow when `SLACK_WEBHOOK_URL` is configured.
 - Resend email sending requires a valid verified sender domain.
 - PDF retrieval depends on the metadata columns and `match_chunks` RPC signature in `supabase_schema.sql`.

@@ -7,8 +7,6 @@ import { getSupabase } from '@/lib/supabase';
 
 type AuthMode = 'signin' | 'signup';
 
-const REMEMBERED_EMAIL_KEY = 'iv_remembered_email';
-
 type FriendlyAuthErrorOptions = {
   mode: AuthMode;
 };
@@ -31,6 +29,36 @@ function getFriendlyAuthError(authError: unknown, options: FriendlyAuthErrorOpti
   }
 
   return raw;
+}
+
+
+async function maybeStoreBrowserCredential(options: {
+  enabled: boolean;
+  email: string;
+  password: string;
+  name?: string;
+}) {
+  if (!options.enabled || typeof window === 'undefined') return;
+
+  const PasswordCredentialCtor = (window as Window & {
+    PasswordCredential?: new (data: { id: string; password: string; name?: string }) => unknown;
+  }).PasswordCredential;
+  const credentialsApi = (navigator as Navigator & {
+    credentials?: { store?: (credential: unknown) => Promise<unknown> };
+  }).credentials;
+
+  if (!PasswordCredentialCtor || !credentialsApi?.store) return;
+
+  try {
+    const credential = new PasswordCredentialCtor({
+      id: options.email,
+      password: options.password,
+      name: options.name,
+    });
+    await credentialsApi.store(credential);
+  } catch {
+    // Ignore unsupported browser credential-manager failures.
+  }
 }
 
 function InsightVaultMark({ size = 20 }: { size?: number }) {
@@ -70,21 +98,18 @@ export default function HomePage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [inputsUnlocked, setInputsUnlocked] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     const resetAuthForm = () => {
-      const rememberedEmail = typeof window !== 'undefined' ? window.localStorage.getItem(REMEMBERED_EMAIL_KEY) : null;
       setDisplayName('');
-      setEmail(rememberedEmail ?? '');
+      setEmail('');
       setPassword('');
       setConfirmPassword('');
-      setRememberMe(Boolean(rememberedEmail));
+      setRememberMe(false);
       setError(null);
       setMessage(null);
-      setInputsUnlocked(false);
     };
 
     resetAuthForm();
@@ -146,11 +171,12 @@ export default function HomePage() {
           password,
         });
         if (signInError) throw signInError;
-        if (rememberMe) {
-          window.localStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
-        } else {
-          window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
-        }
+        await maybeStoreBrowserCredential({
+          enabled: rememberMe,
+          email: normalizedEmail,
+          password,
+          name: displayName.trim() || normalizedEmail,
+        });
         router.replace('/upload');
         return;
       }
@@ -171,13 +197,18 @@ export default function HomePage() {
         return;
       }
 
+      await maybeStoreBrowserCredential({
+        enabled: rememberMe,
+        email: email.trim(),
+        password,
+        name: displayName.trim() || email.trim(),
+      });
       setMessage('Account created. Check your email for a confirmation link before signing in.');
       setMode('signin');
       setDisplayName('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
-      setInputsUnlocked(false);
     } catch (authError) {
       console.warn('Auth error:', authError);
       setError(getFriendlyAuthError(authError, { mode }));
@@ -262,11 +293,11 @@ export default function HomePage() {
         >
           <div className="relative grid grid-cols-2 rounded-xl p-1 mb-6 overflow-hidden" style={{ background: 'var(--bg-element)', border: '1px solid var(--border-default)' }}>
             <div
-              className="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-lg transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
+              className="absolute top-1 bottom-1 left-1 w-[calc(50%-6px)] rounded-lg transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
               style={{
                 background: 'rgba(59,130,246,0.14)',
                 boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.18), 0 10px 26px rgba(37,99,235,0.14)',
-                transform: mode === 'signin' ? 'translateX(0%) scale(1)' : 'translateX(calc(100% + 8px)) scale(1)',
+                transform: mode === 'signin' ? 'translateX(0%) scale(1)' : 'translateX(calc(100% + 6px)) scale(1)',
               }}
             />
             <button
@@ -303,9 +334,7 @@ export default function HomePage() {
               {mode === 'signin' ? 'Sign in with your email and password to continue.' : 'Create an email/password account to access uploads and chat.'}
             </p>
 
-            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-            <input type="text" name="fake-username" autoComplete="username" tabIndex={-1} className="hidden" aria-hidden="true" />
-            <input type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} className="hidden" aria-hidden="true" />
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete={mode === 'signin' ? 'on' : 'off'}>
             {mode === 'signup' && (
               <label className="block">
                 <span className="text-xs font-medium mb-2 block" style={{ color: 'var(--text-ghost)' }}>Display name</span>
@@ -321,9 +350,7 @@ export default function HomePage() {
                     style={{ color: 'var(--text-secondary)' }}
                     placeholder="Your display name"
                     autoComplete="off"
-                    name="auth-display-name"
-                    readOnly={!inputsUnlocked}
-                    onFocus={() => setInputsUnlocked(true)}
+                    name="signup-display-name"
                   />
                 </div>
               </label>
@@ -342,10 +369,8 @@ export default function HomePage() {
                   className="h-6 w-full bg-transparent text-[15px] leading-none outline-none placeholder:opacity-100"
                   style={{ color: 'var(--text-secondary)' }}
                   placeholder="you@example.com"
-                  autoComplete="off"
-                  name="auth-email"
-                  readOnly={!inputsUnlocked}
-                  onFocus={() => setInputsUnlocked(true)}
+                  autoComplete={mode === 'signin' ? 'username' : 'off'}
+                  name={mode === 'signin' ? 'email' : 'signup-email'}
                 />
               </div>
             </label>
@@ -363,10 +388,8 @@ export default function HomePage() {
                   className="h-6 w-full bg-transparent text-[15px] leading-none outline-none placeholder:opacity-100"
                   style={{ color: 'var(--text-secondary)' }}
                   placeholder="Enter your password"
-                  autoComplete="off"
-                  name="auth-password"
-                  readOnly={!inputsUnlocked}
-                  onFocus={() => setInputsUnlocked(true)}
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  name={mode === 'signin' ? 'password' : 'signup-password'}
                 />
               </div>
             </label>
@@ -385,10 +408,8 @@ export default function HomePage() {
                     className="h-6 w-full bg-transparent text-[15px] leading-none outline-none placeholder:opacity-100"
                     style={{ color: 'var(--text-secondary)' }}
                     placeholder="Confirm your password"
-                    autoComplete="off"
-                    name="auth-confirm-password"
-                    readOnly={!inputsUnlocked}
-                    onFocus={() => setInputsUnlocked(true)}
+                    autoComplete="new-password"
+                    name="signup-confirm-password"
                   />
                 </div>
               </label>
@@ -402,7 +423,7 @@ export default function HomePage() {
                   onChange={event => setRememberMe(event.target.checked)}
                   className="h-3 w-3 rounded-[3px] border border-[var(--border-strong)] bg-transparent accent-blue-500"
                 />
-                <span>Remember email</span>
+                <span>Remember me</span>
               </label>
             )}
 
