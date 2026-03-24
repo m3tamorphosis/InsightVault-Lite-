@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import {
+  finalizeGeneratedResponse,
   generateResponse,
   maybeExecuteExternalAction,
-  normalizeGeneratedResponse,
   runAgentWorkflow,
   sanitizeActionResponse,
 } from '@/lib/ai/agent';
@@ -97,7 +97,11 @@ export async function POST(req: Request) {
         if (finalText) emit(finalText);
       }
 
-      finalText = normalizeGeneratedResponse(finalText);
+      finalText = finalizeGeneratedResponse({
+        text: finalText,
+        retrieval: workflow.retrieval,
+        processed: workflow.processed,
+      });
 
       const actionStatus = await maybeExecuteExternalAction({
         classification: workflow.classification,

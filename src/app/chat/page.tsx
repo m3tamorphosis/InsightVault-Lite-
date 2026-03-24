@@ -11,7 +11,7 @@ import {
 import type { ChartData } from '@/lib/ai/types';
 import { getSupabase } from '@/lib/supabase';
 
-// â”€â”€ Markdown helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Markdown helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function inlineMarkdown(text: string): React.ReactNode {
     const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
@@ -71,7 +71,16 @@ function normalizeUploadError(error: unknown): string {
     return 'Upload failed before the browser finished sending the file. Please try again.';
 }
 
+function normalizeDisplayText(text: string): string {
+    return text
+        .replace(/Ã¢â‚¬Â¢/g, '•')
+        .replace(/â€¢/g, '•')
+        .replace(/Ã¢â‚¬Âº/g, '›')
+        .replace(/â€º/g, '›');
+}
+
 function renderMarkdown(text: string) {
+    text = normalizeDisplayText(text);
     const lines = text.split('\n');
     const elements: React.ReactNode[] = [];
     let listItems: string[] = [];
@@ -187,12 +196,12 @@ function renderMarkdown(text: string) {
     return elements;
 }
 
-// â”€â”€ Chart renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Chart renderer Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 const PIE_COLORS = ['#3b82f6','#8b5cf6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
 
 function buildComparisonChartFromMessage(content: string): ChartData | undefined {
-    const normalized = content.replace(/₱/g, 'PHP ');
+    const normalized = content.replace(/â‚±/g, 'PHP ');
     const comparisonPattern = new RegExp(
         String.raw`highest sales record is for (?:a|an)?\s*(.+?)\s+with a total of\s*(?:PHP\s*)?([\d,]+).*?lowest(?: sales record)?(?: is| was)?(?: for)?\s*(?:a|an)?\s*(.+?)\s+with a total of\s*(?:PHP\s*)?([\d,]+)`,
         'is'
@@ -332,7 +341,7 @@ function ChartView({ chart }: { chart: ChartData }) {
     );
 }
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 interface Dataset { fileId: string; name: string; type: 'csv' | 'pdf'; }
 interface Message {
@@ -555,7 +564,7 @@ function saveRecentFile(name: string, fileId: string, type: 'csv' | 'pdf') {
     } catch { /* ignore */ }
 }
 
-// â”€â”€ Logo SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Logo SVG Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function Logo({ size = 13 }: { size?: number }) {
     return (
@@ -581,7 +590,7 @@ function Logo({ size = 13 }: { size?: number }) {
     );
 }
 
-// â”€â”€ PDF Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ PDF Panel Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function PdfPanel({
     pdfUrl,
@@ -660,7 +669,7 @@ function PdfPanel({
     );
 }
 
-// â”€â”€ CSV Preview Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ CSV Preview Panel Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 type PreviewData = {
     headers: string[];
@@ -835,7 +844,7 @@ function CsvPanel({ data, name, fileId, onClose }: { data: PreviewData | null; n
     );
 }
 
-// â”€â”€ Chat content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ Chat content Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function ChatContent() {
     const router = useRouter();
@@ -1531,7 +1540,7 @@ function ChatContent() {
     return (
         <div className="flex flex-col h-screen" style={{ background: 'var(--bg-page)' }}>
 
-            {/* â”€â”€ Header â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Header Ã¢â€â‚¬Ã¢â€â‚¬ */}
             <header
                 className="relative shrink-0 sticky top-0 z-20 px-3 sm:px-5 py-2.5 sm:py-3"
                 style={{
@@ -1910,10 +1919,10 @@ function ChatContent() {
                 )}
             </header>
 
-            {/* â”€â”€ Main content: chat + optional PDF side panel â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Main content: chat + optional PDF side panel Ã¢â€â‚¬Ã¢â€â‚¬ */}
             <div className="flex flex-1 overflow-hidden">
 
-                {/* â”€â”€ Chat column â”€â”€ */}
+                {/* Ã¢â€â‚¬Ã¢â€â‚¬ Chat column Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
                     {/* Messages */}
@@ -2149,7 +2158,7 @@ function ChatContent() {
                                                                 {msg.previewData && (
                                                                     <div className="mt-4 space-y-3">
 
-                                                                        {/* â”€â”€ Data rows table â”€â”€ */}
+                                                                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Data rows table Ã¢â€â‚¬Ã¢â€â‚¬ */}
                                                                         <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
                                                                             <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
                                                                                 <span className="text-[10px] uppercase tracking-widest font-medium" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>
@@ -2185,7 +2194,7 @@ function ChatContent() {
                                                                             </div>
                                                                         </div>
 
-                                                                        {/* â”€â”€ Column stats table â”€â”€ */}
+                                                                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ Column stats table Ã¢â€â‚¬Ã¢â€â‚¬ */}
                                                                         {msg.previewData.stats.length > 0 && (
                                                                             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-default)', background: 'var(--bg-card)' }}>
                                                                                 <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-element)' }}>
@@ -2351,7 +2360,7 @@ function ChatContent() {
                         )}
                     </div>
 
-                    {/* â”€â”€ Input bar â”€â”€ */}
+                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ Input bar Ã¢â€â‚¬Ã¢â€â‚¬ */}
                     <div className="shrink-0 px-3 sm:px-4 pb-4 sm:pb-5 pt-2 sm:pt-3" style={{ borderTop: '1px solid var(--border-default)' }}>
                         <div
                             className="flex items-center gap-2 px-3 sm:px-4 py-2 max-w-3xl mx-auto transition-all duration-200"
@@ -2401,7 +2410,7 @@ function ChatContent() {
                     </div>
                 </div>
 
-                {/* â”€â”€ PDF side panel (desktop only) â”€â”€ */}
+                {/* Ã¢â€â‚¬Ã¢â€â‚¬ PDF side panel (desktop only) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 {showPdfPanel && activeFileType === 'pdf' && (
                     <div
                         className="hidden md:flex flex-col shrink-0"
@@ -2419,7 +2428,7 @@ function ChatContent() {
                     </div>
                 )}
 
-                {/* â”€â”€ CSV preview side panel (desktop only) â”€â”€ */}
+                {/* Ã¢â€â‚¬Ã¢â€â‚¬ CSV preview side panel (desktop only) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 {showCsvPanel && activeFileType === 'csv' && (
                     <div
                         className="hidden md:flex flex-col shrink-0"
@@ -2439,7 +2448,7 @@ function ChatContent() {
                 )}
             </div>
 
-            {/* â”€â”€ PDF mobile full-screen overlay â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ PDF mobile full-screen overlay Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {showPdfPanel && activeFileType === 'pdf' && activePdfUrl && (
                 <div
                     className="md:hidden fixed inset-0 z-50 flex flex-col"
@@ -2465,7 +2474,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* â”€â”€ CSV mobile full-screen overlay â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ CSV mobile full-screen overlay Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {showCsvPanel && activeFileType === 'csv' && (
                 <div
                     className="md:hidden fixed inset-0 z-50 flex flex-col"
@@ -2498,7 +2507,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* â”€â”€ Remove-dataset confirmation modal â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Remove-dataset confirmation modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {removeConfirm && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center"
@@ -2555,7 +2564,7 @@ function ChatContent() {
                 </div>
             )}
 
-            {/* â”€â”€ Scroll-to-bottom button â”€â”€ */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Scroll-to-bottom button Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {!isAtBottom && (
                 <button
                     onClick={scrollToBottom}

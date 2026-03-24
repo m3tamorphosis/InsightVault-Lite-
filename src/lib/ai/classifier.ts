@@ -1,10 +1,11 @@
-﻿import { getOpenAI } from '@/lib/openai';
+import { getOpenAI } from '@/lib/openai';
 import type { ExternalAction, QueryClassification, QueryIntent, RetrievalMode } from './types';
 
 const EMAIL_REGEX = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const STRONG_COMPARISON_REGEX = /\b(compare|comparison|difference|versus|vs\.?|against|highest and lowest|top and bottom|strongest and weakest)\b/i;
 const STRONG_ACTION_REGEX = /\b(send|share|email|mail|slack|post|notify|deliver)\b/i;
 const STRONG_SUMMARY_REGEX = /\b(summary|summarize|summarise|overview|tl;dr|brief)\b/i;
+const CHART_REQUEST_REGEX = /\b(chart|bar chart|line chart|pie chart|scatter|graph|plot|visuali[sz]e|visualization)\b/i;
 
 function detectIntentFromRules(query: string): QueryIntent {
   const normalized = query.toLowerCase();
@@ -30,6 +31,10 @@ function detectRetrievalMode(intent: QueryIntent): RetrievalMode {
 function hasComparisonSignals(query: string): boolean {
   return STRONG_COMPARISON_REGEX.test(query);
 }
+function hasChartSignals(query: string): boolean {
+  return CHART_REQUEST_REGEX.test(query);
+}
+
 
 function detectExternalAction(query: string): ExternalAction {
   const normalized = query.toLowerCase();
@@ -86,6 +91,16 @@ export async function classifyQuery(
     throw new Error('Empty queries are not allowed.');
   }
 
+  if (hasChartSignals(trimmed) && !detectExternalAction(trimmed)) {
+    const chartIntent: QueryIntent = hasComparisonSignals(trimmed) ? 'comparison' : 'analysis';
+    return {
+      intent: chartIntent,
+      confidence: 0.9,
+      rationale: 'Rule-based override kept this as a chart request without an external delivery action.',
+      retrievalMode: chartIntent === 'comparison' ? 'comparative' : 'focused',
+      requestedAction: null,
+    };
+  }
   const fallback = ruleBasedClassification(trimmed);
 
   try {
@@ -129,6 +144,16 @@ Use "action" only when the user explicitly wants a result sent or triggered exte
         retrievalMode: hasComparisonSignals(trimmed) ? 'comparative' : detectRetrievalMode('action'),
         requestedAction: llmResult.requestedAction ?? detectExternalAction(trimmed),
         rationale: `${llmResult.rationale} Rule override kept this as an explicit action request.${hasComparisonSignals(trimmed) ? ' Comparison-aware retrieval was preserved.' : ''}`,
+      };
+    }
+
+    if (hasChartSignals(trimmed) && !detectExternalAction(trimmed) && llmResult.intent === 'action') {
+      return {
+        ...llmResult,
+        intent: hasComparisonSignals(trimmed) ? 'comparison' : 'analysis',
+        retrievalMode: hasComparisonSignals(trimmed) ? 'comparative' : 'focused',
+        requestedAction: null,
+        rationale: `${llmResult.rationale} Rule override kept this as a chart-generation request rather than an external action.`,
       };
     }
 

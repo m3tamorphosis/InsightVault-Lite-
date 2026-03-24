@@ -1,4 +1,4 @@
-﻿import { getOpenAI } from '@/lib/openai';
+import { getOpenAI } from '@/lib/openai';
 import { classifyQuery, extractEmailTarget } from './classifier';
 import { processContext } from './processor';
 import { retrieveDocuments } from './retrieval';
@@ -52,7 +52,9 @@ function buildSystemPrompt(
         'Do not use LaTeX, math delimiters, escaped brackets, or equation notation such as \[ ... \], $$...$$, or \frac. Write calculations in plain text.',
         'When showing a calculation, use a simple format like: Average price = (55000 + 20000 + 2500 + 12000) / 4 = 22875.',
         'Avoid hedging with phrases like "the retrieved context does not provide sufficient data" when the rows shown are enough to compute the answer.',
-      ]
+        processed.chartData ? 'Chart data is already being rendered separately in the UI. Do not describe a hypothetical chart, do not say "you could use a bar chart," and do not restate the grouped data in a markdown table unless the user explicitly asked for a table.' : null,
+        processed.chartData ? 'When chart data is available, keep the explanation short and focus on the main ranking, difference, or takeaway.' : null,
+      ].filter(Boolean)
     : [];
 
   const pdfRules = retrieval.fileType === 'pdf'
@@ -122,6 +124,42 @@ function normalizeMathFormatting(text: string): string {
     .replace(/\n{3,}/g, '\n\n');
 }
 
+
+function stripChartNarration(text: string): string {
+  const blocks = text
+    .replace(/\r\n/g, '\n')
+    .split(/\n\n+/)
+    .map(block => block.trim())
+    .filter(Boolean);
+
+  const filteredBlocks = blocks.filter(block => {
+    const normalized = block.toLowerCase();
+
+    if (
+      /^visualization\b/.test(normalized) ||
+      /^bar chart representation\b/.test(normalized) ||
+      normalized.includes('here is a simple representation') ||
+      normalized.includes('this table can be converted into a') ||
+      normalized.includes('to visualize this data') ||
+      normalized.includes('you would create a bar chart') ||
+      normalized.includes('a bar chart could') ||
+      normalized.includes('this chart would') ||
+      normalized.includes('x-axis:') ||
+      normalized.includes('y-axis:')
+    ) {
+      return false;
+    }
+
+    if (normalized.startsWith('```') || normalized.includes('data table')) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return filteredBlocks.join('\n\n').trim();
+}
+
 export function normalizeGeneratedResponse(text: string): string {
   const withoutFollowUps = text.replace(/\n*#{0,6}\s*Recommended Follow-?up Questions[\s\S]*$/i, '').trim();
   const normalizedNewlines = normalizeMathFormatting(withoutFollowUps).replace(/\r\n/g, '\n').trim();
@@ -146,7 +184,35 @@ export function normalizeGeneratedResponse(text: string): string {
   return dedupedBlocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function buildUserPrompt(message: string, classification: QueryClassification, processed: ProcessedContext, retrieval: RetrievalResult): string {
+export function finalizeGeneratedResponse(params: {
+  text: string;
+  retrieval: RetrievalResult;
+  processed: ProcessedContext;
+}): string {
+  const normalized = normalizeGeneratedResponse(params.text);
+  if (!normalized) return '';
+
+  if (params.retrieval.fileType === 'csv' && params.processed.chartData) {
+    return normalizeGeneratedResponse(stripChartNarration(normalized));
+  }
+
+  return normalized;
+}
+
+function getLatestAssistantMessage(history: Array<{ role: 'user' | 'assistant'; content: string }>): string | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index];
+    if (item.role === 'assistant' && item.content.trim()) {
+      return item.content.trim();
+    }
+  }
+  return null;
+}
+
+function isReferentialActionRequest(message: string): boolean {
+  return /\b(it|that|this|previous|last answer|last result|above|that answer|this answer|my last message)\b/i.test(message);
+}
+function buildUserPrompt(message: string, classification: QueryClassification, processed: ProcessedContext, retrieval: RetrievalResult, history: Array<{ role: 'user' | 'assistant'; content: string }>): string {
   const contextBlock = processed.contextText
     ? `Retrieved context:\n${processed.contextText}`
     : 'No grounded context was retrieved.';
@@ -176,16 +242,20 @@ function buildUserPrompt(message: string, classification: QueryClassification, p
   }
 
   const destination = classification.requestedAction === 'email' ? 'email' : 'Slack message';
+  const latestAssistantMessage = getLatestAssistantMessage(history);
+  const shouldUsePreviousAnswer = !!latestAssistantMessage && isReferentialActionRequest(message);
 
   return [
     contextBlock,
-    '',
+    shouldUsePreviousAnswer && latestAssistantMessage ? `Latest assistant answer to deliver:\n${latestAssistantMessage}` : null,
     `Original user request: ${message}`,
-    '',
     `Task: Create the final ${destination}-ready content that should be sent.`,
+    shouldUsePreviousAnswer
+      ? 'Use the latest assistant answer as the primary content to deliver. Only tighten wording slightly for clarity if needed.'
+      : 'Use the retrieved context to produce the final deliverable content.',
     'Do not mention sending limitations, manual workarounds, or copying/pasting.',
     'If evidence is weak, state that within the summary itself, but still produce the deliverable content.',
-  ].join('\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 export function sanitizeActionResponse(text: string): string {
@@ -214,17 +284,47 @@ export function sanitizeActionResponse(text: string): string {
 function toSlackMrkdwn(text: string): string {
   return text
     .replace(/^#{1,6}\s*(.+)$/gm, '*$1*')
-    .replace(/^[-*]\s+/gm, '• ')
-    .replace(/^›\s*$/gm, '•')
-    .replace(/^›\s+/gm, '• ')
+    .replace(/^[-*]\s+/gm, '- ')
+    .replace(/^>\s+/gm, '- ')
+    .replace(/^([A-Za-z][A-Za-z /_-]+):\s*$/gm, '*$1:*')
+    .replace(/^(-\s+)([A-Za-z][A-Za-z /_-]+):\s*(.+)$/gm, '$1*$2:* $3')
+    .replace(/^(-\s+)([A-Za-z][A-Za-z /_-]+):\s*$/gm, '$1*$2:*')
     .replace(/\*\*(.*?)\*\*/g, '*$1*')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
+type SlackBlock =
+  | { type: 'header'; text: { type: 'plain_text'; text: string } }
+  | { type: 'section'; text: { type: 'mrkdwn'; text: string } }
+  | { type: 'divider' }
+  | { type: 'context'; elements: Array<{ type: 'mrkdwn'; text: string }> };
+
+function splitSlackSections(text: string): string[] {
+  return text
+    .split(/\n{2,}/)
+    .map(section => section.trim())
+    .filter(Boolean);
+}
+
+function toSlackBlocks(responseText: string): SlackBlock[] {
+  const normalized = toSlackMrkdwn(responseText.trim());
+  const sections = splitSlackSections(normalized);
+
+  return sections.map(section => ({
+    type: 'section' as const,
+    text: { type: 'mrkdwn' as const, text: section },
+  })).slice(0, 45);
+}
+
 function formatSlackMessage(message: string, responseText: string): string {
-  const title = /summary/i.test(message) ? '*InsightVault Summary*' : '*InsightVault Update*';
+  const title = /summary/i.test(message)
+    ? '*InsightVault Summary*'
+    : /compare|comparison/i.test(message)
+      ? '*InsightVault Comparison*'
+      : '*InsightVault Update*';
+
   return [
     title,
     '',
@@ -232,6 +332,24 @@ function formatSlackMessage(message: string, responseText: string): string {
     '',
     '_Sent via InsightVault_',
   ].join('\n');
+}
+
+function formatSlackPayload(message: string, responseText: string): { text: string; blocks: SlackBlock[] } {
+  const title = /summary/i.test(message)
+    ? 'InsightVault Summary'
+    : /compare|comparison/i.test(message)
+      ? 'InsightVault Comparison'
+      : 'InsightVault Update';
+
+  return {
+    text: formatSlackMessage(message, responseText),
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: title } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: '_Sent via InsightVault_' }] },
+      { type: 'divider' },
+      ...toSlackBlocks(responseText),
+    ],
+  };
 }
 
 function stripMarkdownForEmail(text: string): string {
@@ -288,7 +406,7 @@ export async function generateResponse(params: {
       ...(classification.intent === 'action' ? [] : history.slice(-6)),
       {
         role: 'user',
-        content: buildUserPrompt(message, classification, processed, retrieval),
+        content: buildUserPrompt(message, classification, processed, retrieval, history),
       },
     ],
   });
@@ -298,7 +416,7 @@ export async function sendToSlack(webhookUrl: string, message: string): Promise<
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: message }),
+    body: message,
   });
 
   if (!response.ok) {
@@ -355,7 +473,7 @@ export async function runAgentWorkflow(request: QueryRequest): Promise<{
     classification,
     filters: request.filters,
   });
-  const processed = processContext({ classification, retrieval });
+  const processed = processContext({ classification, retrieval, query: message });
 
   return { classification, retrieval, processed };
 }
@@ -377,7 +495,7 @@ export async function maybeExecuteExternalAction(params: {
     if (!webhookUrl) {
       return 'Slack delivery was requested, but `SLACK_WEBHOOK_URL` is not configured.';
     }
-    const result = await sendToSlack(webhookUrl, formatSlackMessage(message, responseText));
+    const result = await sendToSlack(webhookUrl, JSON.stringify(formatSlackPayload(message, responseText)));
     return result.detail;
   }
 

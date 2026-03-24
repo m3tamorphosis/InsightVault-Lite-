@@ -4,7 +4,8 @@ import { searchSimilarChunks } from '@/lib/vector-store';
 import type { QueryClassification, RetrievedDocument, RetrievalFilters, RetrievalResult } from './types';
 
 const METRIC_FIELD_PRIORITY = ['total', 'amount', 'sales', 'revenue', 'value', 'price', 'unit_price'];
-const AGGREGATION_QUERY_REGEX = /\b(rank|ranking|sum|total sales|total by|breakdown|average|avg|mean|per\s+region|by\s+region|per\s+category|by\s+category|group\s+by|across\s+different|for each|each product|order dates?|date comparison|dates?\b|highest total sales|lowest total sales|outlier|trend)\b/i;
+const AGGREGATION_QUERY_REGEX = /\b(rank|ranking|top\s+\d+|bottom\s+\d+|top|bottom|sum|total sales|total by|breakdown|average|avg|mean|per\s+region|by\s+region|per\s+category|by\s+category|by\s+product|per\s+product|group\s+by|across\s+different|for each|each product|order dates?|date comparison|dates?\b|highest total sales|lowest total sales|highest|lowest|outlier|trend)\b/i;
+const CHART_REQUEST_REGEX = /\b(chart|bar chart|line chart|pie chart|scatter|graph|plot|visuali[sz]e|visualization)\b/i;
 
 function filterSummary(filters?: RetrievalFilters): string {
   if (!filters) return 'none';
@@ -66,6 +67,10 @@ function buildRowContent(headers: string[], row: Record<string, string>): string
 
 function isAggregationCsvQuery(query: string): boolean {
   return AGGREGATION_QUERY_REGEX.test(query);
+}
+
+function isChartRequest(query: string): boolean {
+  return CHART_REQUEST_REGEX.test(query);
 }
 
 function buildAggregateDocuments(rows: Record<string, string>[]): RetrievedDocument[] {
@@ -135,7 +140,7 @@ function buildCsvDocuments(query: string, rows: Record<string, string>[], classi
     if (comparisonDocs.length > 0) return comparisonDocs;
   }
 
-  if (classification.intent === 'analysis' && isAggregationCsvQuery(query)) {
+  if ((classification.intent === 'analysis' || classification.intent === 'summary') && (isAggregationCsvQuery(query) || isChartRequest(query))) {
     return buildAggregateDocuments(rows);
   }
 
