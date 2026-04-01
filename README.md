@@ -16,6 +16,14 @@ This project started as a basic RAG-style file chat app and was upgraded into a 
 - Metadata-aware retrieval with file type, source, and category filtering.
 - Paragraph-first PDF chunking for more grounded document retrieval.
 - CSV comparison retrieval that can pull highest-vs-lowest records for comparison prompts.
+- Deterministic CSV charting based on structured grouping and metric rules instead of model-only phrasing.
+- Automatic CSV chart type selection:
+  - `bar` for grouped comparisons, rankings, and top/bottom results
+  - `line` for time and trend questions
+  - `pie` for distribution and composition questions, with fallback to `bar` when the group count is too large
+- CSV chart generation only when a valid grouping field, valid metric field, and meaningful grouped result are present.
+- CSV follow-up suggestions generated deterministically from the schema and current app capabilities.
+- Follow-up delivery actions like `Send it to my Slack.` can reuse the latest assistant answer instead of generating a new unrelated summary.
 - Streamed responses through `/api/query`.
 - Credentials auth with Supabase email/password and display-name metadata.
 - Chat import/export support for markdown conversation files.
@@ -43,9 +51,9 @@ File upload
 ### Query pipeline
 1. `classifyQuery()` determines intent and routing.
 2. `retrieveDocuments()` fetches matching rows or semantic chunks.
-3. `processContext()` builds a grounded context packet and warnings.
+3. `processContext()` builds a grounded context packet, warnings, and CSV chart data when the request qualifies for deterministic visualization.
 4. `generateResponse()` streams the final answer.
-5. `maybeExecuteExternalAction()` optionally sends the result to Slack or email.
+5. `maybeExecuteExternalAction()` optionally sends the result to Slack or email, including follow-up delivery actions based on the latest answer.
 
 ## AI Modules
 ```text
@@ -62,6 +70,7 @@ src/lib/ai/
 - Upload page with recent files, protected access, and account dropdown.
 - Multi-file chat with CSV and PDF tabs.
 - Import/export chat as markdown.
+- CSV charts render in-chat when the query is better answered visually.
 - Theme-aware UI for dark and light modes.
 
 ## Main API
@@ -85,15 +94,23 @@ Example request:
 ## Demo Prompts
 ### CSV
 ```text
-Analyze this dataset, identify the most important sales trends, and explain what matters most for the business.
+Analyze this dataset, identify the most important sales trends, explain what matters most for the business, and show the most appropriate chart based on the actual data.
 ```
 
 ```text
-Compare the highest and lowest sales records, explain the key difference, and give a business takeaway.
+Rank the regions by total sales and show the most appropriate chart.
 ```
 
 ```text
-Find any unusual sales patterns or anomalies, and clearly say if the dataset is too limited to support a strong conclusion.
+Show the sales trend over time and explain the main pattern.
+```
+
+```text
+How does total sales break down by category? Explain the distribution and show the most appropriate chart.
+```
+
+```text
+How does the total sales amount vary by region for the product Laptop? Explain the result briefly and show the most appropriate chart.
 ```
 
 ```text
@@ -143,6 +160,9 @@ RESEND_FROM_EMAIL=reports@example.com
 - The chat UI uses `/api/query` as the main orchestration route.
 - Sign out clears InsightVault's local chat, dataset, and recent-file state to avoid cross-user leakage on shared browsers.
 - The auth page supports browser-managed `Remember me` behavior through standard password-manager autofill. The app does not store raw passwords itself.
+- CSV charting is deterministic and CSV-only. PDF workflows remain grounded text and document analysis without chart rendering.
+- CSV follow-up suggestions are schema-aware and deterministic. PDF follow-up suggestions are document-analysis only and explicitly avoid chart-style prompts.
+- When a user sends a follow-up action like `Send it to my Slack.`, the system can reuse the latest assistant result as the delivery content.
 - Slack works as the primary external action flow when `SLACK_WEBHOOK_URL` is configured.
 - Resend email sending requires a valid verified sender domain.
 - PDF retrieval depends on the metadata columns and `match_chunks` RPC signature in `supabase_schema.sql`.
